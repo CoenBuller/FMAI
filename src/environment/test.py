@@ -7,7 +7,6 @@ from vmas.simulator.core import Agent
 
 from config import Config
 
-cfg = Config()
 
 def _get_deterministic_action(agent: Agent, continuous: bool, env):
     if continuous:
@@ -47,13 +46,12 @@ def use_vmas_env(
 
     scenario_name = scenario if isinstance(scenario,str) else scenario.__class__.__name__
 
+
     env = make_env(
         scenario=scenario,
         num_envs=num_envs,
         device=device,
-        continuous_actions=continuous_actions,
-        seed=0,
-        # Environment specific variables
+        continuous_action=continuous_actions,                                         
         **kwargs
     )
 
@@ -93,4 +91,26 @@ def use_vmas_env(
         from moviepy.editor import ImageSequenceClip
         fps=30
         clip = ImageSequenceClip(frame_list, fps=fps)
-        clip.write_gif(f'{scenario_name}.gif', fps=fps)
+        clip.write_gif(f'{cfg.results_dir}/{scenario_name}.gif', fps=fps)
+
+if __name__ == "__main__":
+    cfg = Config()
+    
+    kwargs = cfg.variables
+    kwargs.pop("render")
+    kwargs.pop("num_envs")
+    kwargs.pop("n_steps")
+    kwargs.pop("device")
+    kwargs.pop("scenario")
+    kwargs.pop("continuous_actions")
+    
+    use_vmas_env(
+        render=True,
+        num_envs=cfg.num_envs,
+        n_steps=cfg.n_steps,
+        device=cfg.device,
+        scenario=cfg.scenario,
+        continuous_actions=cfg.continuous_actions,
+        random_action=True,
+        **kwargs
+        )
