@@ -4,6 +4,7 @@ import time
 import torch
 from vmas import make_env
 from vmas.simulator.core import Agent
+from tqdm import tqdm
 
 from config import Config
 
@@ -59,9 +60,8 @@ def use_vmas_env(
     init_time = time.time()
     step = 0
 
-    for s in range(n_steps):
+    for s in tqdm(range(n_steps)):
         step += 1
-        print(f"Step {step}")
 
         actions = []
         for i, agent in enumerate(env.agents):
@@ -88,7 +88,9 @@ def use_vmas_env(
     )
 
     if render:
-        from moviepy.editor import ImageSequenceClip
+        # New (MoviePy v2)
+        from moviepy.video.io.ImageSequenceClip import ImageSequenceClip   
+             
         fps=30
         clip = ImageSequenceClip(frame_list, fps=fps)
         clip.write_gif(f'{cfg.results_dir}/{scenario_name}.gif', fps=fps)

@@ -7,8 +7,8 @@ class Config:
     n_steps: int = 600
 
     scenario: str = "balance"
-    num_envs: int = 1
-    device: str = "cpu"
+    num_envs: int = 4096
+    device: str = "cuda"
     continuous_actions: bool = True
     wrapper: None|str = None                   # One of: None, "rllib", "gym", "gymnasium", "gymnasium_vec"
     max_steps: None|int = None                 # Defines the horizon. None is infinite horizon.
