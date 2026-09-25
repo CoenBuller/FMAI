@@ -8,7 +8,9 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "moviepy>=2.0.0",
     "torch>=2.14.0",
+    "tqdm>=4.70.1",
     "vmas>=1.5.2",
 ]
 
