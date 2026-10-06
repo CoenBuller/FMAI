@@ -11,7 +11,7 @@ class Config:
     device: str = "cuda"
     continuous_actions: bool = True
     wrapper: None|str = None                   # One of: None, "rllib", "gym", "gymnasium", "gymnasium_vec"
-    max_steps: None|int = None                 # Defines the horizon. None is infinite horizon.
+    max_steps: None|int = 500                 # Defines the horizon. None is infinite horizon.
     seed: None|int = 67                        # Seed of the environment
     dict_spaces: bool = False                  # By default tuple spaces are used with each element in the tuple being an agent.
                                                 # If dict_spaces=True, the spaces will become Dict with each key being the agent's name
