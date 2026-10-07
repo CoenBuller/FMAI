@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version >= '3.13' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version < '3.13' and sys_platform != 'win32'",
 ]
 
@@ -1342,7 +1342,7 @@ wheels = [
 [[package]]
 name = "qsfo"
 version = "0.1.0"
-source = { git = "https://github.com/CoenBuller/artifact-fm-qsfo.git?rev=main#2996b51a69b15e9974861f3b4a7a0514e00e43f2" }
+source = { git = "https://github.com/CoenBuller/artifact-fm-qsfo.git?rev=main#43a2b42718de108ae78bc5ecf4081463efadae0a" }
 dependencies = [
     { name = "lark" },
     { name = "polars" },
