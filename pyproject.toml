@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Coen Büller", email = "coen.buller@gmail.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.11.2",
     "moviepy>=2.0.0",
@@ -15,6 +15,7 @@ dependencies = [
     "torchrl>=0.14.0",
     "tqdm>=4.70.1",
     "vmas>=1.5.2",
+    "qsfo @ git+https://github.com/CoenBuller/artifact-fm-qsfo.git@main",
 ]
 
 [project.scripts]
