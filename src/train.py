@@ -1,11 +1,18 @@
 """Train and compare multi-agent RL algorithms on the VMAS Balance scenario with TorchRL.
 
-Run from the repository root:  uv run python src/train.py
-Results: results/compare.csv, results/compare.png and one GIF per run (results/<algorithm>_seed<seed>.gif)
+Run from the repository root:
+    uv run python src/train.py              # every algorithm and seed below, one after another
+    uv run python src/train.py mappo 0      # a single run (the cluster job starts all runs in parallel this way)
+    uv run python src/plot.py               # combine all finished runs into results/compare.png
+Per run, in results/: <algorithm>_seed<seed>.csv (learning curve), .pt (trained actor) and .gif
 """
 import csv
+import math
+import sys
+import time
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -17,40 +24,41 @@ from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 from torchrl.modules import AdditiveGaussianModule, MultiAgentMLP, ProbabilisticActor, TanhDelta, TanhNormal
 from torchrl.objectives import ClipPPOLoss, DDPGLoss, SACLoss, SoftUpdate, TD3Loss, ValueEstimators
+from vmas.simulator.core import Line, Sphere
 
 # =============================== PARAMETERS ===============================
 ALGORITHMS = ["mappo", "ippo", "maddpg", "matd3", "masac"]  # any of: mappo, ippo, maddpg, iddpg, matd3, itd3, masac, isac
 SEEDS = [0, 1, 2]
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 RESULTS_DIR = "results"
-SAVE_GIF = True        # GIF of one deterministic episode after training (needs a display; use xvfb-run on a server)
+SAVE_GIF = True        # GIF of one deterministic episode after training (drawn with matplotlib, no display needed)
 GIF_FPS = 30
 
 # Environment
 SCENARIO = "balance"   # VMAS scenario name, or a BaseScenario instance (e.g. Balance with an STL reward)
 N_AGENTS = 3
-MAX_STEPS = 100        # episode horizon
+MAX_STEPS = 500        # episode horizon
 NUM_ENVS = 600         # parallel training environments
 EVAL_NUM_ENVS = 200    # parallel evaluation environments (one deterministic episode each)
 
 # Training budget, identical for every algorithm (counted in environment steps)
 FRAMES_PER_BATCH = 60_000  # must be a multiple of NUM_ENVS
-TOTAL_FRAMES = 6_000_000
-EVAL_EVERY = 5             # evaluate every N iterations
+TOTAL_FRAMES = 30_000_000
+EVAL_EVERY = 10             # evaluate every N iterations
 
 # Networks
 SHARE_PARAMS = True    # one network shared by all agents (False = one network per agent)
 DEPTH = 2
 NUM_CELLS = 256
 LR = 3e-4
-GAMMA = 0.99
+GAMMA = 0.995
 MAX_GRAD_NORM = 1.0
 
 # On-policy: MAPPO / IPPO
 PPO_EPOCHS = 10
 PPO_MINIBATCH_SIZE = 4096
 CLIP_EPS = 0.2
-GAE_LAMBDA = 0.9
+GAE_LAMBDA = 0.95
 ENTROPY_COEF = 1e-4
 
 # Off-policy: MADDPG / IDDPG / MATD3 / ITD3 / MASAC / ISAC
@@ -158,12 +166,36 @@ def evaluate(env, actor):
 
 
 def save_gif(env, actor, path):
-    """Render evaluation environment 0 for one deterministic rollout."""
+    """Draw evaluation environment 0 with matplotlib during one deterministic rollout (no OpenGL needed)."""
+    fig, ax = plt.subplots(figsize=(5, 4))
     frames = []
+
+    def draw(env, td):
+        ax.clear()
+        ax.set(xlim=(-1.5, 1.5), ylim=(-1.2, 1.2), aspect="equal")
+        ax.axis("off")
+        for entity in env._env.world.entities:
+            (x, y), rot = entity.state.pos[0].tolist(), entity.state.rot[0].item()
+            if isinstance(entity.shape, Sphere):
+                ax.add_patch(plt.Circle((x, y), entity.shape.radius, color=entity.color))
+            elif isinstance(entity.shape, Line):
+                dx, dy = math.cos(rot) * entity.shape.length / 2, math.sin(rot) * entity.shape.length / 2
+                ax.plot([x - dx, x + dx], [y - dy, y + dy], color=entity.color, linewidth=2)
+            else:  # Box (the floor)
+                ax.add_patch(plt.Rectangle((x - entity.shape.length / 2, y - entity.shape.width / 2),
+                                           entity.shape.length, entity.shape.width, color=entity.color))
+        fig.canvas.draw()
+        frames.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
+
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
-        env.rollout(MAX_STEPS, actor, break_when_any_done=False,
-                    callback=lambda env, td: frames.append(env._env.render(mode="rgb_array")))
-    ImageSequenceClip(frames, fps=GIF_FPS).write_gif(path)
+        env.rollout(MAX_STEPS, actor, break_when_any_done=False, callback=draw)
+    plt.close(fig)
+    ImageSequenceClip(frames, fps=GIF_FPS).write_gif(path, logger=None)
+
+
+def save_log(log, path):
+    with open(path, "w", newline="") as f:
+        csv.writer(f).writerows([("algorithm", "seed", "frames", "eval_return", "success_rate", "fall_rate"), *log])
 
 
 def train(algo, seed):
@@ -195,6 +227,7 @@ def train(algo, seed):
                           batch_size=PPO_MINIBATCH_SIZE if on_policy else OFF_POLICY_BATCH_SIZE)
     n_updates = PPO_EPOCHS * (FRAMES_PER_BATCH // PPO_MINIBATCH_SIZE) if on_policy else OFF_POLICY_UPDATES
 
+    name, start = f"{RESULTS_DIR}/{algo}_seed{seed}", time.time()
     log = [(algo, seed, 0, *evaluate(eval_env, actor))]
     for i, td in enumerate(collector):
         expand_done(td)
@@ -222,29 +255,16 @@ def train(algo, seed):
 
         if (i + 1) % EVAL_EVERY == 0:
             log.append((algo, seed, (i + 1) * FRAMES_PER_BATCH, *evaluate(eval_env, actor)))
-            print("{:7s} seed {}  frames {:>10,}  return {:8.2f}  success {:.2f}  fell {:.2f}".format(*log[-1]))
+            save_log(log, f"{name}.csv")  # saved at every evaluation, so a crash or timeout keeps the curve so far
+            print("{:7s} seed {}  frames {:>10,}  return {:8.2f}  success {:.2f}  fell {:.2f}".format(*log[-1]),
+                  f" [{(time.time() - start) / 60:.1f} min]", flush=True)
     collector.shutdown()
+    torch.save(actor.state_dict(), f"{name}.pt")
     if SAVE_GIF:
-        save_gif(eval_env, actor, f"{RESULTS_DIR}/{algo}_seed{seed}.gif")
-    return log
+        save_gif(eval_env, actor, f"{name}.gif")
 
 
 if __name__ == "__main__":
-    rows = [row for algo in ALGORITHMS for seed in SEEDS for row in train(algo, seed)]
-
-    with open(f"{RESULTS_DIR}/compare.csv", "w", newline="") as f:
-        csv.writer(f).writerows([("algorithm", "seed", "frames", "eval_return", "success_rate", "fall_rate"), *rows])
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
-    for column, ax, label in [(3, axes[0], "evaluation team return"), (4, axes[1], "success rate")]:
-        for algo in ALGORITHMS:
-            frames = [r[2] for r in rows if r[0] == algo and r[1] == SEEDS[0]]
-            values = torch.tensor([[r[column] for r in rows if r[0] == algo and r[1] == s] for s in SEEDS])
-            mean, std = values.mean(0), values.std(0, correction=0)
-            ax.plot(frames, mean, label=algo)
-            ax.fill_between(frames, mean - std, mean + std, alpha=0.2)
-        ax.set_xlabel("environment frames")
-        ax.set_ylabel(label)
-    axes[0].legend()
-    fig.suptitle(f"VMAS {SCENARIO}: mean ± std over {len(SEEDS)} seeds")
-    fig.savefig(f"{RESULTS_DIR}/compare.png", dpi=150)
+    for algo in sys.argv[1:2] or ALGORITHMS:
+        for seed in [int(s) for s in sys.argv[2:3]] or SEEDS:
+            train(algo, seed)
