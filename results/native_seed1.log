@@ -1,0 +1,31 @@
+C:\Users\Lucvd\Desktop\studie\master\y2s1\FAI\ass1\code\FMAI\.venv\Lib\site-packages\torchrl\collectors\_single.py:253: FutureWarning: The env passed to Collector is missing transforms required by the policy (InitTracker). From torchrl v0.15 the collector will append them automatically. To enable that behavior now (and silence this warning), pass `auto_register_policy_transforms=True`. To opt out permanently, pass `auto_register_policy_transforms=False`.
+  return super().__call__(*args, **kwargs)
+C:\Users\Lucvd\Desktop\studie\master\y2s1\FAI\ass1\code\FMAI\.venv\Lib\site-packages\torchrl\collectors\_single.py:1260: UserWarning: total_frames (5000000) is not exactly divisible by frames_per_batch (45000). This means 40000 additional frames will be collected.To silence this message, set the environment variable RL_WARNINGS to False.
+  warnings.warn(
+native     seed 1  frames         0  native   -2.45  robustness -1.927  success 0.00  violations 0.21  [0.1 min]
+[92m2026-10-12 13:54:30,038 [torchrl][INFO][0m    Initialized LazyTensorStorage with torch.Size([45000]) shape[92m [END][0m
+C:\Users\Lucvd\Desktop\studie\master\y2s1\FAI\ass1\code\FMAI\.venv\Lib\site-packages\torchrl\objectives\ppo.py:1078: UserWarning: You requested advantage normalization and the advantage key has more dimensions than the tensordict batch. Make sure to pass `normalize_advantage_exclude_dims` if you want to keep any dimension independent while computing normalization statistics. If you are working in multi-agent/multi-objective settings this is highly suggested.
+  warnings.warn(
+native     seed 1  frames   225,000  native    3.96  robustness -0.171  success 0.00  violations 0.26  [0.7 min]
+native     seed 1  frames   450,000  native    4.40  robustness -0.011  success 0.81  violations 0.38  [1.3 min]
+native     seed 1  frames   675,000  native    5.09  robustness -0.007  success 0.99  violations 0.52  [1.9 min]
+native     seed 1  frames   900,000  native    5.23  robustness  0.005  success 1.00  violations 0.49  [2.5 min]
+native     seed 1  frames 1,125,000  native    5.34  robustness  0.011  success 1.00  violations 0.41  [3.0 min]
+native     seed 1  frames 1,350,000  native    5.29  robustness  0.005  success 1.00  violations 0.50  [3.6 min]
+native     seed 1  frames 1,575,000  native    5.45  robustness  0.005  success 1.00  violations 0.53  [4.1 min]
+native     seed 1  frames 1,800,000  native    5.48  robustness  0.003  success 1.00  violations 0.52  [4.7 min]
+native     seed 1  frames 2,025,000  native    5.50  robustness  0.006  success 1.00  violations 0.49  [5.2 min]
+native     seed 1  frames 2,250,000  native    5.43  robustness -0.005  success 1.00  violations 0.56  [5.8 min]
+native     seed 1  frames 2,475,000  native    5.47  robustness  0.010  success 1.00  violations 0.47  [6.3 min]
+native     seed 1  frames 2,700,000  native    5.58  robustness  0.001  success 1.00  violations 0.53  [6.9 min]
+native     seed 1  frames 2,925,000  native    5.42  robustness  0.003  success 1.00  violations 0.53  [7.4 min]
+native     seed 1  frames 3,150,000  native    5.53  robustness  0.009  success 1.00  violations 0.47  [8.0 min]
+native     seed 1  frames 3,375,000  native    5.52  robustness -0.004  success 1.00  violations 0.55  [8.5 min]
+native     seed 1  frames 3,600,000  native    5.49  robustness  0.007  success 1.00  violations 0.50  [9.1 min]
+native     seed 1  frames 3,825,000  native    5.52  robustness  0.000  success 1.00  violations 0.51  [9.6 min]
+native     seed 1  frames 4,050,000  native    5.58  robustness  0.005  success 1.00  violations 0.51  [10.2 min]
+native     seed 1  frames 4,275,000  native    5.53  robustness -0.002  success 1.00  violations 0.56  [10.8 min]
+native     seed 1  frames 4,500,000  native    5.47  robustness  0.006  success 1.00  violations 0.54  [11.3 min]
+native     seed 1  frames 4,725,000  native    5.48  robustness  0.010  success 1.00  violations 0.51  [11.9 min]
+native     seed 1  frames 4,950,000  native    5.53  robustness  0.007  success 1.00  violations 0.48  [12.5 min]
+native     seed 1  frames 5,040,000  native    5.43  robustness  0.004  success 1.00  violations 0.50  [12.7 min]
