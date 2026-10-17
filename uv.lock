@@ -312,7 +312,7 @@ dependencies = [
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "moviepy", specifier = ">=2.0.0" },
-    { name = "qsfo", git = "https://github.com/CoenBuller/artifact-fm-qsfo.git?rev=main" },
+    { name = "qsfo", editable = "../artifact-fm-qsfo" },
     { name = "tensordict", specifier = ">=0.14.2" },
     { name = "torch", marker = "sys_platform != 'win32'", specifier = ">=2.14.0" },
     { name = "torch", marker = "sys_platform == 'win32'", specifier = ">=2.14.0", index = "https://download.pytorch.org/whl/cu126" },
@@ -1342,12 +1342,20 @@ wheels = [
 [[package]]
 name = "qsfo"
 version = "0.1.0"
-source = { git = "https://github.com/CoenBuller/artifact-fm-qsfo.git?rev=main#43a2b42718de108ae78bc5ecf4081463efadae0a" }
+source = { editable = "../artifact-fm-qsfo" }
 dependencies = [
     { name = "lark" },
     { name = "polars" },
     { name = "pplpy" },
     { name = "sympy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lark", specifier = ">=1.3.1" },
+    { name = "polars", specifier = ">=1.38.1" },
+    { name = "pplpy", specifier = ">=0.8.10" },
+    { name = "sympy", specifier = ">=1.14.0" },
 ]
 
 [[package]]
