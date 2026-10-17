@@ -44,7 +44,6 @@ def train_robustness(
 
         # 2. robustness per step
         rho = robustness_per_step(rollout, trackers, signal_map)
-        print(rho)
 
         # log the mean robustness
         env_return = rollout["next", "agents", "reward"].sum(dim=1).mean().item()
@@ -57,9 +56,6 @@ def train_robustness(
 
         for key in ("done", "terminated"):
             rollout["next", "agents", key] = rollout["next", key].unsqueeze(-2).expand_as(rew)
-
-        print(rollout["agents", "observation"].shape)   # expect [E, T, A, D], D = 6 without lidar
-        print(rollout)   
 
         # 4. advantages (GAE) with the shaped reward
         with torch.no_grad():
@@ -87,20 +83,16 @@ if __name__ == "__main__":
     """Smoke run test of robustness training loop."""
     from fmai.agents import Agent
 
-    cfg = Config(EPISODES=1, DEVICE="cpu", MAX_STEPS=100)
+    cfg = Config(EPISODES=1, DEVICE="cpu", MAX_STEPS=100, NUM_ENVS=1)
     env = VmasEnv(
         scenario=cfg.SCENARIO,
-        num_envs=1,
+        num_envs=cfg.NUM_ENVS,
         continuous_actions=True,
         max_steps=cfg.MAX_STEPS,
         seed=cfg.SEED
         )
 
-    agent = Agent()
-    agent.make_agent(
-        env=env, 
-        cfg=cfg
-        )
+    agent = Agent().make_agent(env=env, cfg=cfg)
 
     formula = "|gx(t)| <= 0.5 && |gy(t)| <= 0.5"
     signal_map = {"gx": (0, 4), "gy": (0, 5)}
