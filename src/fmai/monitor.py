@@ -19,24 +19,11 @@ class WeighedRobustnessTracker():
         for tr, w, vals in zip(self.trackers, self.weights, values_list):
             r = tr.step(t, vals)              # always updates tr.prev
             if r is None:
-                continue                      # undefined: contributes nothing
+                return None                   # undefined robustness for a formula. Return None.
             r = max(-self.clip, min(self.clip, r))
             total += w * r
             any_defined = True
         return total if any_defined else None
-
-    def make_segment(self, name, t0, v0, t1, v1):
-            tr = SignalsTrace(["t", name], [{"t": t0, name: v0}, {"t": t1, name: v1}])
-            return tr.piecewise_linear_signal(name)[0]
-    
-    
-    def value_at(self, M, t0, tvar):
-        for r, S in M:
-            if t0 in S:
-                if r == INFTY:     return float("inf")
-                if r == NEG_INFTY: return float("-inf")
-                return float(r.subs(tvar, t0)) if hasattr(r, "subs") else float(r)
-        return None   # undefined at t0
 
 
 
