@@ -1,33 +1,58 @@
+from qsfo.monitoring.quantitative import OnlineMonitor
+from qsfo.monitoring.trace import SignalsTrace
+from qsfo.polyhedron import INFTY, NEG_INFTY, frac, Var
+
 from qsfo.parser import Parser
 
-class OnlineMonitor():
-    def __init__(self, 
-                 formula: str, 
-                 sampling_interval: None | float=None, 
-                 horizon: None | float=None,
-                 max_samples: None | int=None,
-                 csv: None | str=None,
-                 csv_with_robusteness: bool=False,
-                 csv_no_buffering: bool=False,
-                 stdout: bool=True
-                 ):
+
+
+
+class RobustnessTracker:
+    def __init__(self, formula: str, signal_names: list[str], horizon: int):
+        self.formula = self.parse_formula(formula)
+        self.names = signal_names 
+        self.H = horizon
+        self.reset()
+
+    def parse_formula(self, formula: str):
+        parser = Parser()
+        return parser.parse(formula)
+
+    def reset(self):
+        self.mon = OnlineMonitor(self.formula, self.H)   # fresh history per episode
+        self.prev = None
+
+    def step(self, t: float | int, values: dict):
+        """Call once per env step. Returns robustness at time t (None for the first sample).
         
-        self.formula = Parser(formula)                   # The SFO formula used to calculate the robusteness score
-        self.sampling_interval = sampling_interval       # Optional sampling interval (float) for inputs that do not contain the time variable `t` explicitely
-        self.horizon = horizon                           # Optional horizon value (float)
-        self.max_samples = max_samples                   # Optional maximum number of CSV samples to load from input traces
-        self.csv = csv                                   # Write output to the csv file
-        self.csv_with_robusteness = csv_with_robusteness # Write robustness signal into CSV (makes sense only if the len of the signal is always 1)
-        self.csv_no_buffering = csv_no_buffering         # Write output to CSV immediately, without buffering
-        self.stdout = stdout                             # Write not output to stdout
+        values is a dict containing one measurement of each signal per variable. For variables 'u' and 'x' 
+        with values 0.42 and 1 it becomes {"u": 0.42, "x": 1}""" 
+        t_frac = frac(t)
+        rho = None
+        if self.prev is not None:
+            t0, v0 = self.prev
+            segs = {n: self.make_segment(n, t0, v0[n], t_frac, values[n]) for n in self.names}
+            ref = segs[self.names[0]]
+            time_interval = ref.time_bounds_as_ph().substitute(
+                {ref.timevar(): self.mon.timevar}
+            )
+            M = self.mon.update(segs, time_interval)
+            rho = self.value_at(M, t0, self.mon.timevar)
+        self.prev = (t_frac, values)
+        return rho
 
-        if stdout:
-            print("--- Parsed formula ---")
-            print(formula)
-            print("------")
-            print("Free variables: ", set(map(str, formula.free_variables())) or "∅")
-            print("Bound variables: ", set(map(str, formula.bound_variables())) or "∅")
-            print("Signals: ", set(map(lambda s: str(s.name()), formula.signals())))
 
+    def make_segment(self, name, t0, v0, t1, v1):
+        tr = SignalsTrace(["t", name], [{"t": t0, name: v0}, {"t": t1, name: v1}])
+        return tr.piecewise_linear_signal(name)[0]
+
+
+    def value_at(self, M, t0, tvar):
+        for r, S in M:
+            if t0 in S:
+                if r == INFTY:     return float("inf")
+                if r == NEG_INFTY: return float("-inf")
+                return float(r.subs(tvar, t0)) if hasattr(r, "subs") else float(r)
+        return None   # undefined at t0
 
     

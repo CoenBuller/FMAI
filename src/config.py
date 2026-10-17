@@ -1,23 +1,53 @@
+import torch.nn as nn
+
+from typing import Literal
 from dataclasses import dataclass
+from torch.nn import Tanh, ReLU, Sigmoid
+
+
 
 @dataclass
 class Config:
-    results_dir: str = "results"
-    render: bool = False
-    n_steps: int = 600
+    RESULTS_DIR: str = "results"
+    RENDER: bool = False
 
-    scenario: str = "balance"
-    num_envs: int = 4096
-    device: str = "cuda"
-    continuous_actions: bool = True
-    wrapper: None|str = None                   # One of: None, "rllib", "gym", "gymnasium", "gymnasium_vec"
-    max_steps: None|int = 500                 # Defines the horizon. None is infinite horizon.
-    seed: None|int = 67                        # Seed of the environment
-    dict_spaces: bool = False                  # By default tuple spaces are used with each element in the tuple being an agent.
-                                                # If dict_spaces=True, the spaces will become Dict with each key being the agent's name
-    grad_enabled: bool = True                  # If grad_enabled the simulator is differentiable and gradients can flow from output to input
-    terminated_truncated: bool = False         # If terminated_truncated the simulator will return separate `terminated` and `truncated` flags in the `done()`, `step()`, and `get_from_scenario()` functions instead of a single `done` flag
+    SCENARIO: str = "navigation"
+    NUM_ENVS: int = 5
+    DEVICE: str = "cuda"
+    MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
+    EPISODES: int|float = 1e6                               # Number of episodes to train for
+    SEED: None|int = 67                                     # Seed of the environment
 
+
+    #---------------------------------- Agent Config ----------------------------------#
+    
+    # Agent architecture
+    MAPPO: bool = False                                     # Set to True to use MAPPO. False defaults to IPPO
+    DEPTH: int = 2                                          # Number of hidden layers
+    N_NODES: int = 256                                      # Number of neurons per layer
+    ACTIVATION: Literal["Tanh", "ReLU", "Sigmoid"] = "ReLU" # Activaton function
+
+    # Helper to get activation
+    def get_activation(self) -> nn.Module:
+        activations = {
+            "Tanh": Tanh,
+            "ReLU": ReLU,
+            "Sigmoid": Sigmoid,
+        }
+        return activations[self.ACTIVATION]    
+
+    # PPO Loss
+    CLIP_EPS: float = 0.2                                   # Clipping parameter for PPO loss
+    ENTROPY_COEF: float = 1e-4                              # Entropy coeficient to regularize action probabilities
+    GAMMA: float = 0.99                                     # Reward decay coefficient 
+    LAMBDA: float =0.9                                      # Lambda parameter for Generalized Advantage Estimate (GAE)
+
+    # Optimizer
+    LR: float = 3e-4                                        # Learning rate
+    EPOCHS: int = 10                                        # Parameter update epochs
+    MINIBATCH: int = 20                                     # How many steps to update over at once
+
+    #---------------------------------- Retrieving variables ----------------------------------#
     @property
     def variables(self):
         return self.get_variables()
