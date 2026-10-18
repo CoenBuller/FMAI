@@ -8,7 +8,6 @@ from qsfo.polyhedron import INFTY, NEG_INFTY, frac
 from qsfo.parser import Parser
 
 
-AGG = {"min": np.min, "max": np.max, "mean": np.mean}
 
 @dataclass(frozen=True)
 class Sig:
@@ -18,9 +17,14 @@ class Sig:
 
 def extract(obs: np.ndarray, spec: Sig) -> np.ndarray:
     """obs: [E, T, A, D] -> [E, T]. Aggregates over all selected agents/entries."""
+    agg = {
+        "min": np.min, 
+        "max": np.max, 
+        "mean": np.mean
+        }
     sel = obs[:, :, spec.agent, spec.obs]
-    sel = sel.reshape(sel.shape[0], sel.shape[1], -1)      # works for scalars too
-    return AGG[spec.agg](sel, axis=-1)
+    sel = sel.reshape(sel.shape[0], sel.shape[1], -1)     
+    return agg[spec.agg](sel, axis=-1)
 
 
 class WeighedRobustnessTracker():
@@ -38,7 +42,6 @@ class WeighedRobustnessTracker():
         if any(r is None for r in rs):
             return None
         return sum(w * max(-self.clip, min(self.clip, r)) for w, r in zip(self.weights, rs)) # type: ignore
-
 
 
 class RobustnessTracker:
