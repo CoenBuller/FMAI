@@ -1,11 +1,30 @@
+import numpy as np
+
+from dataclasses import dataclass
+
 from qsfo.monitoring.quantitative import OnlineMonitor
 from qsfo.monitoring.trace import SignalsTrace
-from qsfo.polyhedron import INFTY, NEG_INFTY, frac, Var
-
+from qsfo.polyhedron import INFTY, NEG_INFTY, frac
 from qsfo.parser import Parser
 
+
+AGG = {"min": np.min, "max": np.max, "mean": np.mean}
+
+@dataclass(frozen=True)
+class Sig:
+    agent: int | slice = 0          # 0, slice(None) for all agents, ...
+    obs: int | slice = 0            # 4, slice(6, 18), ...
+    agg: str = "min"                # only used if the selection has more than one element
+
+def extract(obs: np.ndarray, spec: Sig) -> np.ndarray:
+    """obs: [E, T, A, D] -> [E, T]. Aggregates over all selected agents/entries."""
+    sel = obs[:, :, spec.agent, spec.obs]
+    sel = sel.reshape(sel.shape[0], sel.shape[1], -1)      # works for scalars too
+    return AGG[spec.agg](sel, axis=-1)
+
+
 class WeighedRobustnessTracker():
-    def __init__(self, formulas: dict[str, list[str]], formula_weights: list[float], horizon: int, clip: float = 10.0):
+    def __init__(self, formulas: dict[str, dict[str, Sig]], formula_weights: list[float], horizon: int, clip: float = 10.0):
         self.trackers = [RobustnessTracker(f, names, horizon) for f, names in formulas.items()]
         self.weights = formula_weights
         self.clip = clip
@@ -14,21 +33,16 @@ class WeighedRobustnessTracker():
         for tracker in self.trackers:
             tracker.reset()
 
-    def step(self, t: float | int, values_list: list[dict]):
-        total, any_defined = 0.0, False
-        for tr, w, vals in zip(self.trackers, self.weights, values_list):
-            r = tr.step(t, vals)              # always updates tr.prev
-            if r is None:
-                return None                   # undefined robustness for a formula. Return None.
-            r = max(-self.clip, min(self.clip, r))
-            total += w * r
-            any_defined = True
-        return total if any_defined else None
+    def step(self, t, values_list):
+        rs = [tr.step(t, vals) for tr, vals in zip(self.trackers, values_list)]  # always updates prev
+        if any(r is None for r in rs):
+            return None
+        return sum(w * max(-self.clip, min(self.clip, r)) for w, r in zip(self.weights, rs)) # type: ignore
 
 
 
 class RobustnessTracker:
-    def __init__(self, formula: str, signal_names: list[str], horizon: int):
+    def __init__(self, formula: str, signal_names: dict[str, Sig], horizon: int):
         self.formula = self.parse_formula(formula)
         self.names = signal_names 
         self.H = horizon
@@ -52,7 +66,7 @@ class RobustnessTracker:
         if self.prev is not None:
             t0, v0 = self.prev
             segs = {n: self.make_segment(n, t0, v0[n], t_frac, values[n]) for n in self.names}
-            ref = segs[self.names[0]]
+            ref = segs[list(self.names.keys())[0]]
             time_interval = ref.time_bounds_as_ph().substitute(
                 {ref.timevar(): self.mon.timevar}
             )
