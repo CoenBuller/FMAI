@@ -1,20 +1,33 @@
-import torchrl
+import json
 import torch, torch.nn as nn
 import numpy as np
 
+from tqdm import tqdm
+from pathlib import Path
 
 from torchrl.envs.libs.vmas import VmasEnv
+from torchrl.envs.utils import set_exploration_type, ExplorationType
 
 from fmai.monitor import WeighedRobustnessTracker, extract, Sig
+from fmai.agents import Agent
 from config import Config
 
+def save_history(history, path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(history, f, indent=2)
+    tmp.replace(path)  
+
+def ms(x): # mean/std that don't give NaN for a single sample
+    return x.mean().item(), x.std(correction=0).item()
 
 def batch_formulas(formulas, signal_maps):
     phis = dict()
     for i, f in enumerate(formulas):
         phis[f] = signal_maps[i]
     return phis
-
 
 def robustness_per_step(rollout, trackers, clip=10.0, decimals=3):
     """rollout obs: [E, T, A, D]. Returns rho: [E, T] (0 where undefined)."""
@@ -37,6 +50,44 @@ def robustness_per_step(rollout, trackers, clip=10.0, decimals=3):
                 rho[e, k - 1] = max(-clip, min(clip, r))
     return rho
 
+def evaluate(
+        eval_env: VmasEnv, 
+        agent: Agent, 
+        eval_trackers: list[WeighedRobustnessTracker], 
+        cfg: Config,
+        training_episode: int,
+        **kwargs
+        ):
+    
+    with torch.no_grad():
+        with set_exploration_type(ExplorationType.DETERMINISTIC):
+            rollout = eval_env.rollout(
+                max_steps=cfg.MAX_STEPS,
+                policy=agent.policy,
+                break_when_any_done=False,
+            )
+
+    # Return per env and agent: [E, T, A, 1] -> sum over time -> [E, A]
+    ret = rollout["next", "agents", "reward"].sum(dim=1).squeeze(-1)
+
+    # Robustness per env: worst value over the episode -> [E]
+    rho = robustness_per_step(rollout, eval_trackers)
+    rho_env = rho[:, :-1].min(dim=1).values                 # drop last step, is always 0
+
+    ret_mean, ret_std = ms(ret.mean(dim=1))                 # per-env return averaged over agents, then stats across envs
+    _, ret_agent_std = ms(ret.std(dim=1, correction=0))     # how much agents differ within an env
+    rho_mean, rho_std = ms(rho_env)
+
+    return {
+        "episode": training_episode,
+        "return_mean": ret_mean,
+        "return_std": ret_std,                              # across envs
+        "return_agent_std": ret_agent_std,                  # across agents (avg over envs)
+        "rho_mean": rho_mean,
+        "rho_std": rho_std,                                 # across envs
+    }
+        
+
 def train_robustness(
         env: VmasEnv,
         eval_env: VmasEnv,
@@ -48,33 +99,57 @@ def train_robustness(
         formula_weights: list[float] | None = None,
         **kwargs
         ):
-
-    E = env.batch_size[0]
     
+    history = []
+
     F = batch_formulas(formulas=formulas, signal_maps=signal_maps)                         
     if formula_weights is None:
         formula_weights = [1/len(F)] * len(F)
-    trackers = [WeighedRobustnessTracker(F, formula_weights, horizon) for _ in range(E)]
+
+    modes = {"rho": "robustness", "none": "reward", "mixed": "robustness & reward"}     
+    mode = cfg.REWARD_MODE
+    assert mode in modes, f"The given mode is not in possible modes to train the agent. Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
+    print(f"\n======= mode: {modes[mode]} =======")
+    results_path = Path(cfg.RESULTS_DIR) / f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}.json"
+
+    E = env.batch_size[0]
+    E_eval = eval_env.batch_size[0]
 
     assert(cfg.EPISODES >= E), f"Number of total episodes is smaller than the number fo environments. (cfg.EPISODES={cfg.EPISODES} | E={E}))"
-    for episode in range(cfg.EPISODES // E): # type: ignore
+
+    if mode in ["rho", "mixed"]:
+        trackers = [WeighedRobustnessTracker(F, formula_weights, horizon) for _ in range(E)]
+    eval_trackers = [WeighedRobustnessTracker(F, formula_weights, horizon) for _ in range(E_eval)]
+
+    # Progress bar
+    p_bar = tqdm(
+        total=cfg.EPISODES, 
+        desc="Episode",
+        bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}', 
+        colour='red',
+        ) 
+
+    # Training loop
+    for episode in range(cfg.EPISODES // E): #type: ignore
         # 1. collect one full episode per env (cfg.max_steps == env max_steps)
         with torch.no_grad():
             rollout = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
                                   break_when_any_done=False)
 
         # 2. robustness per step
-        rho = robustness_per_step(rollout, trackers)
-        if kwargs.get("verbose", False):
-            print(rho)
-        # log the mean robustness
-        env_return = rollout["next", "agents", "reward"].sum(dim=1).mean().item()
-        rho_mean = rho[:, :-1].min(dim=1).values.mean().item()   # or rho[:, -2], depends on formula
-        rho_std = rho[:, :-1].min(dim=1).values.std().item()
+        rew = rollout["next", "agents", "reward"]                       # Used when only reward is used
+        if mode in ["rho", "mixed"]:
+            rho = robustness_per_step(rollout, trackers) #type: ignore
+            if kwargs.get("verbose", False):
+                print(rho)
+            rho_r = rho[..., None, None].to(rew.device).expand_as(rew)
+            if mode == "mixed":                                         # Use reward and robustness
+                rew = rew + cfg.RHO_COEF * rho_r
+            else:                                                       # Only use robustness
+                rew = rho_r
 
-        rew = rollout["next", "agents", "reward"]
-        rho_r = rho[..., None, None].to(rew.device).expand_as(rew)
-        rollout["next", "agents", "reward"] = rho_r 
+        rollout["next", "agents", "reward"] = rew
+
 
         for key in ("done", "terminated"):
             rollout["next", "agents", key] = rollout["next", key].unsqueeze(-2).expand_as(rew)
@@ -99,48 +174,89 @@ def train_robustness(
                 agent.optim.step()
                 agent.optim.zero_grad()
 
-        print(f"ep {episode}: return={env_return:.3f}  rho (mean +/- std)={rho_mean:.3f} +/- {rho_std:.3f}")
+        # 6. Evaluate agent
+        if episode % cfg.EVAL_INTERVAL == 0:
+            info = evaluate(
+                eval_env=eval_env,
+                agent=agent,
+                eval_trackers=eval_trackers,
+                cfg=cfg,
+                training_episode=episode
+            )
+            history.append(info)
+            save_history({"config": vars(cfg), "formulas": formulas, "history": history}, results_path)
+
+            if mode in ["rho", "mixed"]:
+                p_bar.set_postfix(
+                    avg_return=f"{info['return_mean']:.4f}", average_robustness=f"{info['rho_mean']:.4f}"
+                )
+            else:
+                p_bar.set_postfix(
+                    avg_return=f"{info['return_mean']:.4f}"
+                )
+
+            if kwargs.get("verbose_eval", False):
+                print(f"[eval] ep {episode}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
+                    f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}")
+                
+        p_bar.update(n=E)
+
 
 if __name__ == "__main__":
-    """Smoke run test of robustness training loop."""
-    from fmai.agents import Agent
-
-    cfg = Config(EPISODES=2, DEVICE="cpu", MAX_STEPS=100, NUM_ENVS=2)
-    env = VmasEnv(
-        scenario=cfg.SCENARIO,
-        num_envs=cfg.NUM_ENVS,
-        continuous_actions=True,
-        max_steps=cfg.MAX_STEPS,
-        seed=cfg.SEED
-        )
-
-    agent = Agent()
-    agent.make_agent(
-        env=env, 
-        cfg=cfg
-        )
+    """Smoke run test of the robustness training loop, all three reward modes."""
 
     formulas = [
         "|gx(t)| <= 0.5 && |gy(t)| <= 0.5",
-        "lmax(t) < 0.5",                      # all rays below 0.5  <=>  max ray below 0.5
-        ]
+        "lmax(t) < 0.5",
+    ]
     signal_maps = [
         {"gx": Sig(0, 4), "gy": Sig(0, 5)},
         {"lmax": Sig(0, slice(6, 18), "max")},
     ]
     horizon = 5
 
-    train_robustness(
-        env=env,
-        eval_env=env,
-        agent=agent,
-        formulas=formulas,
-        signal_maps=signal_maps,
-        horizon=horizon,
-        cfg=cfg,
-        verbose=True,
-    )
+    for mode in ["none", "rho", "mixed"]:
+        cfg = Config(
+            DEVICE="cpu",
+            MAX_STEPS=100,
+            NUM_ENVS=2,
+            EPISODES=4,          # 4 // 2 = 2 training iterations
+            EVAL_INTERVAL=1,     # eval after every iteration
+            EPOCHS=2,
+            MINIBATCH=100,       # 2 envs * 100 steps = 200 samples -> 2 minibatches
+            REWARD_MODE=mode,
+            RHO_COEF=1.0,
+        )
 
+        env = VmasEnv(
+            scenario=cfg.SCENARIO,
+            num_envs=cfg.NUM_ENVS,
+            continuous_actions=True,
+            max_steps=cfg.MAX_STEPS,
+            seed=cfg.SEED,
+        )
+        eval_env = VmasEnv(
+            scenario=cfg.SCENARIO,
+            num_envs=2,
+            continuous_actions=True,
+            max_steps=cfg.MAX_STEPS,
+            seed=cfg.SEED + 1, 
+        )
+        assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
+
+        agent = Agent()
+        agent.make_agent(env=env, cfg=cfg)
+
+        train_robustness(
+            env=env,
+            eval_env=eval_env,
+            agent=agent,
+            formulas=formulas,
+            signal_maps=signal_maps,
+            horizon=horizon,
+            cfg=cfg,
+            # verbose_eval=True,
+        )
 
 
 

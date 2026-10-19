@@ -1,0 +1,49 @@
+{
+  "config": {
+    "RESULTS_DIR": "results/second",
+    "RENDER": false,
+    "SCENARIO": "navigation",
+    "NUM_ENVS": 2,
+    "DEVICE": "cpu",
+    "MAX_STEPS": 100,
+    "EPISODES": 4,
+    "SEED": 67,
+    "EVAL_INTERVAL": 1,
+    "EVAL_EPISODES": 10,
+    "REWARD_MODE": "rho",
+    "RHO_COEF": 1.0,
+    "MAPPO": false,
+    "DEPTH": 2,
+    "N_NODES": 256,
+    "ACTIVATION": "ReLU",
+    "CLIP_EPS": 0.2,
+    "ENTROPY_COEF": 0.0001,
+    "GAMMA": 0.9900000000000001,
+    "LAMBDA": 0.9,
+    "LR": 0.00030000000000000003,
+    "EPOCHS": 2,
+    "MINIBATCH": 100
+  },
+  "formulas": [
+    "|gx(t)| <= 0.5 && |gy(t)| <= 0.5",
+    "lmax(t) < 0.5"
+  ],
+  "history": [
+    {
+      "episode": 0,
+      "return_mean": -0.4329347312450409,
+      "return_std": 0.057821840047836304,
+      "return_agent_std": 0.0,
+      "rho_mean": 0.2135000079870224,
+      "rho_std": 0.0885000079870224
+    },
+    {
+      "episode": 1,
+      "return_mean": -0.11228308081626892,
+      "return_std": 0.4302962124347687,
+      "return_agent_std": 0.0,
+      "rho_mean": 0.17775000631809235,
+      "rho_std": 0.15324999392032623
+    }
+  ]
+}
