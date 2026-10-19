@@ -88,7 +88,7 @@ def evaluate(
     }
         
 
-def train_robustness(
+def train(
         env: VmasEnv,
         eval_env: VmasEnv,
         agent,
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         )
         eval_env = VmasEnv(
             scenario=cfg.SCENARIO,
-            num_envs=2,
+            num_envs=cfg.EVAL_EPISODES,
             continuous_actions=True,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED + 1, 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
 
-        train_robustness(
+        train(
             env=env,
             eval_env=eval_env,
             agent=agent,
