@@ -220,7 +220,7 @@ if __name__ == "__main__":
     horizon = 5
 
     for mode in ["none", "rho", "mixed"]:
-        cfg = Config(
+        cfg = Config(                           # When changing environment variables, only change the config file. Then it is almost guaranteed to work correctly. 
             DEVICE="cpu",
             MAX_STEPS=100,
             NUM_ENVS=2,
@@ -235,14 +235,14 @@ if __name__ == "__main__":
         env = VmasEnv(
             scenario=cfg.SCENARIO,
             num_envs=cfg.NUM_ENVS,
-            continuous_actions=True,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED,
         )
         eval_env = VmasEnv(
             scenario=cfg.SCENARIO,
             num_envs=cfg.EVAL_EPISODES,
-            continuous_actions=True,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED + 1, 
         )

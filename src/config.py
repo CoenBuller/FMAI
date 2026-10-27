@@ -10,18 +10,19 @@ from torch.nn import Tanh, ReLU, Sigmoid
 class Config:
     RESULTS_DIR: str = "results/second"
     RENDER: bool = False
-
-    SCENARIO: str = "navigation"
-    NUM_ENVS: int = 5
     DEVICE: str = "cuda"
-    MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
-    EPISODES: int|float = 1e6                               # Number of episodes to train for
-    SEED: int = 67                                     # Seed of the environment
     EVAL_INTERVAL: int = 100                                # After how many episodes to do an evaluation run
+    SEED: int = 67                                          # Seed of the environment
     EVAL_EPISODES: int = 10                                 # How many episodes for evaluation
+    EPISODES: int|float = 1e6                               # Number of episodes to train for
     REWARD_MODE: str = "rho"                                # Agent can learn either using robustness (rho), using reward (rew), or mixed
     RHO_COEF: float = 1
 
+    #---------------------------------- Env Config ----------------------------------#
+    SCENARIO: str = "navigation"
+    NUM_ENVS: int = 5
+    MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
+    CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
 
     #---------------------------------- Agent Config ----------------------------------#
     
