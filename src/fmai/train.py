@@ -205,13 +205,17 @@ def train(
 if __name__ == "__main__":
     """Smoke run test of the robustness training loop, all three reward modes."""
 
-    formulas = [
+    
+    formulas = [                                # Need a list of formulas to work
         "|gx(t)| <= 0.5 && |gy(t)| <= 0.5",
         "lmax(t) < 0.5",
     ]
-    signal_maps = [
-        {"gx": Sig(0, 4), "gy": Sig(0, 5)},
-        {"lmax": Sig(0, slice(6, 18), "max")},
+    formula_weights = [                         # The list of formula weights, to weight them against each other. (Can also be None, each formula will have the same weight)
+        0.5, 0.5    
+    ]
+    signal_maps = [                             # Maps the formula variables to observation tuple variables
+        {"gx": Sig(0, 4), "gy": Sig(0, 5)},     # 0 means that it ignores it
+        {"lmax": Sig(0, slice(6, 18), "max")},  # slice(6, 18), "max" means it will take the maximum of the indices 6 - 18. Not maximum index but corresponding value
     ]
     horizon = 5
 
@@ -220,10 +224,10 @@ if __name__ == "__main__":
             DEVICE="cpu",
             MAX_STEPS=100,
             NUM_ENVS=2,
-            EPISODES=4,          # 4 // 2 = 2 training iterations
-            EVAL_INTERVAL=1,     # eval after every iteration
+            EPISODES=4,                         # 4 // 2 = 2 training iterations
+            EVAL_INTERVAL=1,                    # eval after every iteration
             EPOCHS=2,
-            MINIBATCH=100,       # 2 envs * 100 steps = 200 samples -> 2 minibatches
+            MINIBATCH=100,                      # 2 envs * 100 steps = 200 samples -> 2 minibatches
             REWARD_MODE=mode,
             RHO_COEF=1.0,
         )
