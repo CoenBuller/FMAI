@@ -6,7 +6,7 @@ from pathlib import Path
 from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 
-from fmai.robustness import WeightedRobustness, Pred, Or
+from fmai.robustness import WeightedRobustness, Pred, Or, And
 from fmai.agents import Agent
 from fmai.utils import save_history, save_agent, save_gif, ms, dgoal_max, lidar_max, dgoal_avg, lidar_avg
 from config import Config
@@ -27,22 +27,28 @@ class Defined:
         self.f = f
 
     def __call__(self, obs):
-        return torch.nan_to_num(self.f(obs), nan=float("-inf"))
+        return torch.nan_to_num(self.f(obs), nan=-10)
 
 
 def build_spec():
-    """exists dt in [1, 2]. (da(t) >= 0.2 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.5)"""
+    """exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.1) && (da(t) < 0.5 || da(t - dt) - da(t) > 0.3) && (da(t) > 0.05)"""
     da, dg = lidar_avg, dgoal_avg
 
     def branch(dt):
-        return Or(
-            Pred(da, ">=", 0.2),
-            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.2)),
-            Pred(dg, "<", 0.5),
+        progress_clause= Or(
+            Pred(da, ">=", 0.5),
+            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.3*dt)),
+            Pred(dg, "<", 0.1),
         )
+        safety_clause = Or(
+            Pred(da, "<", 0.5),
+            Defined(Pred(lambda obs: shift(da(obs), dt) - da(obs), ">", 0.05*dt),)
+        )
+        terminal_clause = Pred(da, ">", 0.05)
+        return And(progress_clause, safety_clause, terminal_clause)
 
-    phi = Or(*[branch(dt) for dt in (1, 2)])
-    desc = ["exists dt in [1, 2]. (da(t) >= 0.2 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.5)"]
+    phi = Or(*[branch(dt) for dt in (1, 2, 3, 4, 5)],  )
+    desc = ["exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.1) && (da(t) < 0.5 || da(t - dt) - da(t) > 0.3) && da(t) > 0.05"]
     return WeightedRobustness([phi], weights=None, clip=10.0), desc
 
 
@@ -222,8 +228,18 @@ if __name__ == "__main__":
         )
         assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
 
+        
+
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
+
+        agent_pos = env.agents[0] # or env.world.agents[0] depending on VMAS version
+        goal = agent_pos.goal     # In NavigationSFO, each agent has a referenced goal
+
+        print(f"Agent radius: {agent_pos.shape.radius}")
+        print(f"Goal radius: {goal.shape.radius}")
+        print(f"Agent max speed: {agent_pos.u_multiplier}")
+        print(f"Simulator timestep: {env.world.dt}")
 
         training_his = train(
             env=env, 
