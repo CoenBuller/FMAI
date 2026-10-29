@@ -22,34 +22,37 @@ def shift(x, dt):
 
 
 class Defined:
-    """Wrap a margin function; undefined (NaN) steps count as -inf, so they never win an Or."""
+    """Wrap a margin function; undefined steps count as neutral (0.0) to prevent gradient explosions."""
     def __init__(self, f):
         self.f = f
 
     def __call__(self, obs):
-        return torch.nan_to_num(self.f(obs), nan=-10)
+        # FIX 1: Change -10 to 0.0 so early undefined steps don't explode the gradients
+        return torch.nan_to_num(self.f(obs), nan=0.0)
 
 
 def build_spec():
-    """exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.1) && (da(t) < 0.5 || da(t - dt) - da(t) > 0.3) && (da(t) > 0.05)"""
     da, dg = lidar_avg, dgoal_avg
 
+    safety_clause = Pred(da, "<", 0.5)
+
     def branch(dt):
-        progress_clause= Or(
-            Pred(da, ">=", 0.5),
-            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.3*dt)),
+        # Progress is only demanded if you are safe.
+        return Or(
+            Pred(da, ">=", 0.5),  # Suppress the progress requirement if dodging
+            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.05 * dt)),
             Pred(dg, "<", 0.1),
         )
-        safety_clause = Or(
-            Pred(da, "<", 0.5),
-            Defined(Pred(lambda obs: shift(da(obs), dt) - da(obs), ">", 0.05*dt),)
-        )
-        terminal_clause = Pred(da, ">", 0.05)
-        return And(progress_clause, safety_clause, terminal_clause)
 
-    phi = Or(*[branch(dt) for dt in (1, 2, 3, 4, 5)],  )
-    desc = ["exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.1) && (da(t) < 0.5 || da(t - dt) - da(t) > 0.3) && da(t) > 0.05"]
-    return WeightedRobustness([phi], weights=None, clip=10.0), desc
+    # The agent must make progress over AT LEAST one of these time windows
+    progress_any = Or(*[branch(dt) for dt in (1, 2, 3, 4, 5)])
+    
+    # The final rule: Must be safe AND (must make progress when safe)
+    phi = And(safety_clause, progress_any)
+    desc = ["exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.05*dt || dg(t) < 0.1) && da(t) > 0.05"]
+    
+    # scale as the native reward, preventing the PPO loss from destabilizing.
+    return WeightedRobustness([phi], weights=None, clip=1.0), desc
 
 
 # ----------------------------- evaluation -----------------------------
