@@ -1,4 +1,3 @@
-import json
 import torch, torch.nn as nn
 import numpy as np
 
@@ -10,35 +9,20 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 
 from fmai.monitor import WeighedRobustnessTracker, extract, Sig
 from fmai.agents import Agent
+from fmai.utils import save_history, save_agent, save_gif, ms, batch_formulas, dgoal, dgoal_max, lidar_max
 from config import Config
-
-def save_history(history, path):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with open(tmp, "w") as f:
-        json.dump(history, f, indent=2)
-    tmp.replace(path)  
-
-def ms(x): # mean/std that don't give NaN for a single sample
-    return x.mean().item(), x.std(correction=0).item()
-
-def batch_formulas(formulas, signal_maps):
-    phis = dict()
-    for i, f in enumerate(formulas):
-        phis[f] = signal_maps[i]
-    return phis
 
 def robustness_per_step(rollout, trackers, clip=10.0, decimals=3):
     """rollout obs: [E, T, A, D]. Returns rho: [E, T] (0 where undefined)."""
-    obs = rollout["agents", "observation"].cpu().numpy()
+    obs = rollout["agents", "observation"]
     E, T = obs.shape[:2]
 
     # Extract every signal once for all envs and steps (specs are the same for every env).
-    signals = [
-        {n: np.round(extract(obs, spec), decimals) for n, spec in tr.names.items()} # For each formula in tracker
-        for tr in trackers[0].trackers                                              # For each tracker
-    ]
+    with torch.no_grad():
+        signals = [
+            {n: fn(obs).round(decimals=decimals).cpu().numpy() for n, fn in tr.names.items()}
+            for tr in trackers[0].trackers
+        ]
 
     rho = torch.zeros(E, T)
     for e in range(E):
@@ -74,10 +58,11 @@ def evaluate(
     rho = robustness_per_step(rollout, eval_trackers)
     rho_env = rho[:, :-1].min(dim=1).values                 # drop last step, is always 0
 
+    pass_rate, _ = ms((rho_env >= 0).to(dtype=float))
+
     ret_mean, ret_std = ms(ret.mean(dim=1))                 # per-env return averaged over agents, then stats across envs
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))     # how much agents differ within an env
     rho_mean, rho_std = ms(rho_env)
-
     return {
         "episode": training_episode,
         "return_mean": ret_mean,
@@ -85,6 +70,7 @@ def evaluate(
         "return_agent_std": ret_agent_std,                  # across agents (avg over envs)
         "rho_mean": rho_mean,
         "rho_std": rho_std,                                 # across envs
+        "pass_rate": pass_rate
     }
         
 
@@ -110,7 +96,9 @@ def train(
     mode = cfg.REWARD_MODE
     assert mode in modes, f"The given mode is not in possible modes to train the agent. Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
-    results_path = Path(cfg.RESULTS_DIR) / f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}.json"
+    results_path = Path(cfg.RESULTS_DIR) / f"traces" / f"{cfg.RUN_ID}" / f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}.json"
+    agent_path = Path(cfg.RESULTS_DIR) / f"agents" / f"{cfg.RUN_ID}" / f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}.pt"
+    gif_path = Path(cfg.RESULTS_DIR) / f"gifs" / f"{cfg.RUN_ID}"/ f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}.gif"
 
     E = env.batch_size[0]
     E_eval = eval_env.batch_size[0]
@@ -139,9 +127,11 @@ def train(
         # 2. robustness per step
         rew = rollout["next", "agents", "reward"]                       # Used when only reward is used
         if mode in ["rho", "mixed"]:
-            rho = robustness_per_step(rollout, trackers) #type: ignore
-            if kwargs.get("verbose", False):
+            rho = robustness_per_step(rollout, trackers)                #type: ignore
+
+            if kwargs.get("verbose", False):                            # Can set the 'verbose' kwarg to true for debugging                
                 print(rho)
+
             rho_r = rho[..., None, None].to(rew.device).expand_as(rew)
             if mode == "mixed":                                         # Use reward and robustness
                 rew = rew + cfg.RHO_COEF * rho_r
@@ -185,7 +175,7 @@ def train(
             )
             history.append(info)
             save_history({"config": vars(cfg), "formulas": formulas, "history": history}, results_path)
-
+            save_agent(agent, agent_path)
             if mode in ["rho", "mixed"]:
                 p_bar.set_postfix(
                     avg_return=f"{info['return_mean']:.4f}", average_robustness=f"{info['rho_mean']:.4f}"
@@ -200,28 +190,37 @@ def train(
                     f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}")
                 
         p_bar.update(n=E)
+    
+    p_bar.close()
+    save_agent(agent, agent_path)
+    save_gif(eval_env, agent, cfg.MAX_STEPS, gif_path, fps=30)
+    return history
+
+
 
 
 if __name__ == "__main__":
     """Smoke run test of the robustness training loop, all three reward modes."""
-
+    import time
     
     formulas = [                                # Need a list of formulas to work
-        "|gx(t)| <= 0.5 && |gy(t)| <= 0.5",
+        "dg(t) <= 0.5",
         "lmax(t) < 0.5",
     ]
     formula_weights = [                         # The list of formula weights, to weight them against each other. (Can also be None, each formula will have the same weight)
         0.5, 0.5    
     ]
-    signal_maps = [                             # Maps the formula variables to observation tuple variables
-        {"gx": Sig(0, 4), "gy": Sig(0, 5)},     # 0 means that it ignores it
-        {"lmax": Sig(0, slice(6, 18), "max")},  # slice(6, 18), "max" means it will take the maximum of the indices 6 - 18. Not maximum index but corresponding value
-    ]
+    signal_maps = [
+    {"dg": dgoal_max},     # L2 goal distance of agent 0
+    {"lmax": lidar_max},     # max over agent 0's 12 rays
+]
     horizon = 5
+
+    run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
 
     for mode in ["none", "rho", "mixed"]:
         cfg = Config(                           # When changing environment variables, only change the config file. Then it is almost guaranteed to work correctly. 
-            DEVICE="cpu",
+            DEVICE="cuda",
             MAX_STEPS=100,
             NUM_ENVS=2,
             EPISODES=4,                         # 4 // 2 = 2 training iterations
@@ -230,6 +229,7 @@ if __name__ == "__main__":
             MINIBATCH=100,                      # 2 envs * 100 steps = 200 samples -> 2 minibatches
             REWARD_MODE=mode,
             RHO_COEF=1.0,
+            RUN_ID=run_id
         )
 
         env = VmasEnv(
@@ -238,6 +238,7 @@ if __name__ == "__main__":
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED,
+            device=cfg.DEVICE
         )
         eval_env = VmasEnv(
             scenario=cfg.SCENARIO,
@@ -245,13 +246,14 @@ if __name__ == "__main__":
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED + 1, 
+            device=cfg.DEVICE
         )
         assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
 
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
 
-        train(
+        trainnig_his = train(
             env=env,
             eval_env=eval_env,
             agent=agent,

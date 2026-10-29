@@ -17,6 +17,7 @@ class Config:
     EPISODES: int|float = 1e6                               # Number of episodes to train for
     REWARD_MODE: str = "rho"                                # Agent can learn either using robustness (rho), using reward (rew), or mixed
     RHO_COEF: float = 1
+    RUN_ID: str = ""
 
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "navigation"

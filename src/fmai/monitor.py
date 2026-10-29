@@ -1,4 +1,6 @@
-import numpy as np
+import torch
+
+from torch import Tensor
 
 from dataclasses import dataclass
 
@@ -7,24 +9,22 @@ from qsfo.monitoring.trace import SignalsTrace
 from qsfo.polyhedron import INFTY, NEG_INFTY, frac
 from qsfo.parser import Parser
 
+from fmai.utils import dgoal, dgoal_max, lidar_max, AGG
 
 
 @dataclass(frozen=True)
 class Sig:
-    agent: int | slice = 0          # 0, slice(None) for all agents, ...
-    obs: int | slice = 0            # 4, slice(6, 18), ...
-    agg: str = "min"                # only used if the selection has more than one element
+    agent: int | slice = 0
+    obs: int | slice = 0
+    agg: tuple[tuple[str, int], ...] = (("min", -1),)   # (function, axis) steps, applied in order
 
-def extract(obs: np.ndarray, spec: Sig) -> np.ndarray:
-    """obs: [E, T, A, D] -> [E, T]. Aggregates over all selected agents/entries."""
-    agg = {
-        "min": np.min, 
-        "max": np.max, 
-        "mean": np.mean
-        }
-    sel = obs[:, :, spec.agent, spec.obs]
-    sel = sel.reshape(sel.shape[0], sel.shape[1], -1)     
-    return agg[spec.agg](sel, axis=-1)
+def extract(obs: Tensor, spec: Sig) -> Tensor:
+    """obs: [E, T, A, D] -> [E, T]. Applies each aggregation step to the selected entries."""
+    sel = obs[:, :, spec.agent, spec.obs]               # [E, T, ...]
+    for name, axis in spec.agg:
+        sel = AGG[name](sel, axis=axis)
+    assert sel.ndim == 2, f"selection not reduced to [E, T], got {sel.shape}"
+    return sel
 
 
 class WeighedRobustnessTracker():
@@ -45,7 +45,7 @@ class WeighedRobustnessTracker():
 
 
 class RobustnessTracker:
-    def __init__(self, formula: str, signal_names: dict[str, Sig], horizon: int):
+    def __init__(self, formula: str, signal_names: dict[str, callable], horizon: int):
         self.formula = self.parse_formula(formula)
         self.names = signal_names 
         self.H = horizon
