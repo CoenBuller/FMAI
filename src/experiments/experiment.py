@@ -1,7 +1,7 @@
 import time, yaml, dataclasses
 
 from fmai.utils import AGG
-from fmai.train import train
+from fmai.train import train, build_spec
 from fmai.agents import Agent
 from config import Config
 
@@ -46,9 +46,8 @@ def run_all(
     e = load_experiment(path)
     run_id = time.strftime("%Y%m%d_%H%M%S")
 
-    formulas=e["formulas"]
-    formula_weights=e["formula_weights"]
-    signal_maps=e["signal_maps"]
+    spec, spec_desc = build_spec()
+
 
     for mode in e["modes"]:
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
@@ -80,9 +79,8 @@ def run_all(
             env=env,
             eval_env=eval_env,
             agent=agent,
-            formulas=formulas,
-            formula_weights=formula_weights,
-            signal_maps=signal_maps,
+            spec=spec,
+            spec_desc=spec_desc,
             horizon=cfg.HORIZON,
             cfg=cfg,
             # verbose_eval=True,

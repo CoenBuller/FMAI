@@ -14,12 +14,18 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 def dgoal_max(obs):                      
     return torch.linalg.vector_norm(obs[..., 4:6], dim=-1).max(-1).values
 
+def dgoal_avg(obs):                      
+    return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
+
 # Get euclidean distance tothe goal for a single agent
 def dgoal(a):                            
     return lambda obs: torch.linalg.vector_norm(obs[..., a, 4:6], dim=-1)
 
 def lidar_max(obs):                       # all rays of all agents
     return obs[..., 6:18].amax(dim=(-2, -1))
+
+def lidar_avg(obs):
+    return obs[..., 6:18].amax(dim=-1)
 
 # Possible agregation functions, can run natively on the gpu to create signal traces before calculating robustness
 AGG = {
