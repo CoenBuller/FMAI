@@ -18,6 +18,7 @@ class Config:
     REWARD_MODE: str = "rho"                                # Agent can learn either using robustness (rho), using reward (rew), or mixed
     RHO_COEF: float = 1
     RUN_ID: str = ""
+    HORIZON: int = 1000
 
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "navigation"

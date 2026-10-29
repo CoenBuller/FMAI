@@ -118,7 +118,8 @@ def train(
         ) 
 
     # Training loop
-    for episode in range(cfg.EPISODES // E): #type: ignore
+    n_iters = cfg.EPISODES // E
+    for it in range(n_iters): 
         # 1. collect one full episode per env (cfg.max_steps == env max_steps)
         with torch.no_grad():
             rollout = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
@@ -165,13 +166,14 @@ def train(
                 agent.optim.zero_grad()
 
         # 6. Evaluate agent
-        if episode % cfg.EVAL_INTERVAL == 0:
+        episodes_seen = (it + 1) * E
+        if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
             info = evaluate(
                 eval_env=eval_env,
                 agent=agent,
                 eval_trackers=eval_trackers,
                 cfg=cfg,
-                training_episode=episode
+                training_episode=episodes_seen 
             )
             history.append(info)
             save_history({"config": vars(cfg), "formulas": formulas, "history": history}, results_path)
@@ -186,7 +188,7 @@ def train(
                 )
 
             if kwargs.get("verbose_eval", False):
-                print(f"[eval] ep {episode}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
+                print(f"[eval] ep {episodes_seen}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
                     f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}")
                 
         p_bar.update(n=E)
@@ -203,22 +205,16 @@ if __name__ == "__main__":
     """Smoke run test of the robustness training loop, all three reward modes."""
     import time
     
-    formulas = [                                # Need a list of formulas to work
-        "dg(t) <= 0.5",
-        "lmax(t) < 0.5",
+    formulas = [
+    "exists dt in [1, 2]. (da(t) >= 0.2 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.5)",       # or your full formula
     ]
-    formula_weights = [                         # The list of formula weights, to weight them against each other. (Can also be None, each formula will have the same weight)
-        0.5, 0.5    
-    ]
-    signal_maps = [
-    {"dg": dgoal_max},     # L2 goal distance of agent 0
-    {"lmax": lidar_max},     # max over agent 0's 12 rays
-]
+    formula_weights = None
+    signal_maps = [{"dg": dgoal_max, "da": lidar_max}]
     horizon = 5
 
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
 
-    for mode in ["none", "rho", "mixed"]:
+    for mode in ["rho"]:
         cfg = Config(                           # When changing environment variables, only change the config file. Then it is almost guaranteed to work correctly. 
             DEVICE="cuda",
             MAX_STEPS=100,
@@ -259,6 +255,7 @@ if __name__ == "__main__":
             agent=agent,
             formulas=formulas,
             signal_maps=signal_maps,
+            formula_weights=formula_weights,
             horizon=horizon,
             cfg=cfg,
             # verbose_eval=True,

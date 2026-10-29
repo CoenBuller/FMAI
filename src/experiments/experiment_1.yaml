@@ -1,0 +1,48 @@
+formulas: 
+  -  "exists dt in [1, 2]. (da(t) >= 0.2 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.5)"
+
+formula_weights: null   # or null for equal weights
+
+# signal name in formula -> function name in the registry
+signal_maps:
+  - dg: dg_max       # L2 goal distance of agent 0
+    da: lmax         # max over agent 0's 12 rays
+
+horizon: 150
+
+modes: [rho, none]
+
+# passed straight into the Config dataclass (field names must match)
+config:
+    RENDER: False
+    DEVICE: "cuda"
+    EVAL_INTERVAL: 4                                  # After how many episodes to do an evaluation run
+    SEED: 67                                          # Seed of the environment
+    EVAL_EPISODES: 100                                # How many episodes for evaluation
+    EPISODES: 35000                                   # Number of episodes to train for
+    RHO_COEF: 1
+    HORIZON: 4500
+
+    #---------------------------------- Env Config ----------------------------------#
+    SCENARIO: "navigation"
+    NUM_ENVS: 300
+    MAX_STEPS: 150                                    # Defines the horizon. None is infinite horizon.
+
+    #---------------------------------- Agent Config ----------------------------------#
+    
+    # Agent architecture
+    MAPPO: False                                      # Set to True to use MAPPO. False defaults to IPPO
+    DEPTH: 2                                          # Number of hidden layers
+    N_NODES: 256                                      # Number of neurons per layer
+    ACTIVATION: "ReLU"                                # Activaton function 
+
+    # PPO Loss
+    CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss
+    ENTROPY_COEF: 1.0e-4                                # Entropy coeficient to regularize action probabilities
+    GAMMA: 0.99                                       # Reward decay coefficient 
+    LAMBDA: 0.95                                      # Lambda parameter for Generalized Advantage Estimate (GAE)
+
+    # Optimizer
+    LR: 3.0e-4                                          # Learning rate
+    EPOCHS: 10                                        # Parameter update epochs
+    MINIBATCH: 20   

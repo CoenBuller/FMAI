@@ -1,0 +1,25 @@
+formulas:
+  - "dg(t) <= 0.5"
+  - "lmax(t) < 0.5"
+
+formula_weights: [0.5, 0.5]   # or null for equal weights
+
+# signal name in formula -> function name in the registry
+signal_maps:
+  dg: dgoal_max       # L2 goal distance of agent 0
+  lmax: lidar_max     # max over agent 0's 12 rays
+
+horizon: 5
+
+modes: [none, rho, mixed]
+
+# passed straight into the Config dataclass (field names must match)
+config:
+  DEVICE: cuda
+  MAX_STEPS: 100
+  NUM_ENVS: 2
+  EPISODES: 4
+  EVAL_INTERVAL: 1
+  EPOCHS: 2
+  MINIBATCH: 100
+  RHO_COEF: 1.0
