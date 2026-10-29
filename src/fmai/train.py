@@ -61,8 +61,8 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
     ret = rollout["next", "agents", "reward"].sum(dim=1).squeeze(-1)
 
     # Robustness per env: worst value over the episode -> [E]
-    rho = spec(rollout["next", "agents", "observation"])    # [E, T], no lag, every step defined
-    rho_env = rho.min(dim=1).values
+    rho = spec(rollout["next", "agents", "observation"])    # [E, T, A], no lag, every step defined
+    rho_env = rho.amin(dim=(1,2))                           # [E], worst rho per env
 
     pass_rate, _ = ms((rho_env >= 0).float())
 
