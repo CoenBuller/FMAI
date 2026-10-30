@@ -40,5 +40,5 @@ config:
 
     # Optimizer
     LR: 3.0e-4                                          # Learning rate
-    EPOCHS: 10                                        # Parameter update epochs
-    MINIBATCH: 20   
+    EPOCHS: 4                                        # Parameter update epochs
+    MINIBATCH: 2048   

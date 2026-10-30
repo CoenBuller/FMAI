@@ -15,4 +15,4 @@ def gif_contact_sheet(gif_path, out_path, n_frames=12, cols=4):
         sheet.paste(f, ((k % cols) * w, (k // cols) * h))
     sheet.save(out_path)
 
-gif_contact_sheet("results/second/gifs/20261030_113639/navigation_mixed_seed67.gif", "sheet.png")
+gif_contact_sheet("results/second/gifs/20261030_134705/navigation_none_seed67.gif", "sheet.png")
