@@ -40,16 +40,16 @@ def build_spec():
         # Progress is only demanded if you are safe.
         return Or(
             Pred(da, ">=", 0.5),  # Suppress the progress requirement if dodging
-            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.05 * dt)),
+            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.05)),
             Pred(dg, "<", 0.1),
         )
 
     # The agent must make progress over AT LEAST one of these time windows
-    progress_any = Or(*[branch(dt) for dt in (1, 2, 3, 4, 5)])
+    progress_any = branch(1)
     
     # The final rule: Must be safe AND (must make progress when safe)
     phi = And(safety_clause, progress_any)
-    desc = ["exists dt in [1, 2, 3, 4, 5]. (da(t) >= 0.5 || dg(t - dt) - dg(t) > 0.05*dt || dg(t) < 0.1) && da(t) > 0.05"]
+    desc = ["(da(t) >= 0.5 || dg(t - 1) - dg(t) > 0.1 || dg(t) < 0.1) && da(t) > 0.05"]
     
     # scale as the native reward, preventing the PPO loss from destabilizing.
     return WeightedRobustness([phi], weights=None, clip=1.0), desc

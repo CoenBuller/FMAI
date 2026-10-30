@@ -22,7 +22,7 @@ class Agent():
             critic, 
             clip_epsilon=cfg.CLIP_EPS, 
             entropy_coeff=cfg.ENTROPY_COEF, 
-            normalize_advantage=True,
+            normalize_advantage=False,
             normalize_advantage_exclude_dims=(-2,)
             )
         

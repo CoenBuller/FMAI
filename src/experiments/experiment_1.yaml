@@ -10,7 +10,7 @@ signal_maps:
 
 horizon: 150
 
-modes: [rho, none]
+modes: [mixed, rho, none]
 
 # passed straight into the Config dataclass (field names must match)
 config:
