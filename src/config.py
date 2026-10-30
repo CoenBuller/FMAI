@@ -19,6 +19,7 @@ class Config:
     RHO_COEF: float = 1
     RUN_ID: str = ""
     HORIZON: int = 1000
+    EVAL_GIF: bool = False
 
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "navigation"

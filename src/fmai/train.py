@@ -43,6 +43,8 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
     ret_mean, ret_std = ms(ret.mean(dim=1))                 # per-env return averaged over agents, then stats across envs
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))     # how much agents differ within an env
     rho_mean, rho_std = ms(rho_env)
+
+
     return {
         "episode": training_episode,
         "return_mean": ret_mean,
@@ -172,6 +174,8 @@ def train(
                 print(f"[eval] ep {episodes_seen}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
                       f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}  "
                       f"pass={info['pass_rate']:.2f}")
+            if cfg.EVAL_GIF:
+                save_gif(eval_env, agent, cfg.MAX_STEPS, gif_path, fps=30)
 
         p_bar.update(n=E)
 

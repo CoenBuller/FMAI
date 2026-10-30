@@ -17,6 +17,7 @@ config:
     EPISODES: 35000                                   # Number of episodes to train for
     RHO_COEF: 1
     HORIZON: 4500
+    EVAL_GIF: True
 
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: "navigation"
