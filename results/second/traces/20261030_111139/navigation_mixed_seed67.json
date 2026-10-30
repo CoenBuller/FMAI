@@ -1,0 +1,44 @@
+{
+  "config": {
+    "RESULTS_DIR": "results/second",
+    "RENDER": false,
+    "DEVICE": "cuda",
+    "EVAL_INTERVAL": 4,
+    "SEED": 67,
+    "EVAL_EPISODES": 100,
+    "EPISODES": 35000,
+    "REWARD_MODE": "mixed",
+    "RHO_COEF": 1,
+    "RUN_ID": "20261030_111139",
+    "HORIZON": 4500,
+    "SCENARIO": "navigation",
+    "NUM_ENVS": 300,
+    "MAX_STEPS": 150,
+    "CONTINUOUS_ACTIONS": true,
+    "MAPPO": false,
+    "DEPTH": 2,
+    "N_NODES": 256,
+    "ACTIVATION": "ReLU",
+    "CLIP_EPS": 0.2,
+    "ENTROPY_COEF": 0.0001,
+    "GAMMA": 0.99,
+    "LAMBDA": 0.95,
+    "LR": 0.0003,
+    "EPOCHS": 10,
+    "MINIBATCH": 20
+  },
+  "formulas": [
+    "safe: da < 0.2  AND  exists dt in 1: (da >= 0.2 || dg(t-dt)-dg(t) > 0.01*dt || dg < 0.1)"
+  ],
+  "history": [
+    {
+      "episode": 1200,
+      "return_mean": -10.181398391723633,
+      "return_std": 9.70837688446045,
+      "return_agent_std": 9.386385917663574,
+      "rho_mean": -0.1993376463651657,
+      "rho_std": 0.00464267423376441,
+      "pass_rate": 0.0
+    }
+  ]
+}

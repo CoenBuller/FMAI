@@ -7,46 +7,21 @@ from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 
+from fmai.robustness import WeightedRobustness, Pred, Or, And
 
 # ------------------------ MONITOR UTILITIES ---------------------------
 
 # Helper function to get the maximum euclidean distance to the goal between agents
-def dgoal_max(obs):                      
-    return torch.linalg.vector_norm(obs[..., 4:6], dim=-1).max(-1).values
 
-def dgoal_avg(obs):                      
+def dgoal(obs):                      
     return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
 
-# Get euclidean distance tothe goal for a single agent
-def dgoal(a):                            
-    return lambda obs: torch.linalg.vector_norm(obs[..., a, 4:6], dim=-1)
-
-def lidar_max(obs):                       # all rays of all agents
-    return obs[..., 6:18].amax(dim=(-2, -1))
-
-def lidar_avg(obs):
+def dlidar(obs):
     return obs[..., 6:18].amax(dim=-1)
 
-# Possible agregation functions, can run natively on the gpu to create signal traces before calculating robustness
-AGG = {
-    "min": torch.min, 
-    "max": torch.max, 
-    "mean": torch.mean,
-    "dg_max": dgoal_max,
-    "dg": dgoal,
-    "lmax": lidar_max
-    }
+
 
 # ------------------------ TRAIN UTILITIES ---------------------------
-
-
-
-# Function to map formulas to the signal maps
-def batch_formulas(formulas, signal_maps):
-    phis = dict()
-    for i, f in enumerate(formulas):
-        phis[f] = signal_maps[i]
-    return phis
 
 def with_episode_ids(obs, done):
     """Append the episode index of every step as an extra channel. obs: [E,T,A,D], done: [E,T,1]."""
@@ -73,7 +48,7 @@ GOAL_EPS = 0.1       # the env's done radius
 V_MIN = 0.01         # required progress per step; check against the diagnostic below
 
 def build_spec():
-    da, dg = lidar_avg, dgoal_avg                    # [E,T,A]; rename them, they are per-agent max/distance, not averages
+    da, dg = dlidar, dgoal                    # [E,T,A]; rename them, they are per-agent max/distance, not averages
 
     safety = Pred(da, "<", LIDAR_SAFE)
 
@@ -87,7 +62,7 @@ def build_spec():
 
     phi = And(safety, branch(1))
     desc = [f"safe: da < {LIDAR_SAFE}  AND  exists dt in 1: (da >= {LIDAR_SAFE} || dg(t-dt)-dg(t) > {V_MIN}*dt || dg < {GOAL_EPS})"]
-    return WeightedRobustness([phi], weights=None, clip=1.0), desc
+    return WeightedRobustness([phi], weights=None, clip=3.0), desc
 
 
 

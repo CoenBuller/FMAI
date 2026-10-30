@@ -1,6 +1,5 @@
 import time, yaml, dataclasses
 
-from fmai.utils import AGG
 from fmai.train import train, build_spec
 from fmai.agents import Agent
 from config import Config
@@ -10,19 +9,8 @@ from torchrl.envs.libs.vmas import VmasEnv
 
 def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
-        y = yaml.safe_load(f)
+        y = yaml.safe_load(f)    
 
-    # YAML dict -> list of single-entry dicts, as train() expects
-    signal_maps = []
-    for entry in y["signal_maps"]:                  # one dict per formula
-        d = {}
-        for name, fn_name in entry.items():
-            if fn_name not in AGG:
-                raise KeyError(f"Unknown signal function '{fn_name}'. Add it to REGISTRY.")
-            d[name] = AGG[fn_name]
-        signal_maps.append(d)
-
-    assert len(signal_maps) == len(y["formulas"]), "need one signal map per formula"
 
     # catch typos in Config field names early
     valid = {f.name for f in dataclasses.fields(Config)}
@@ -33,7 +21,6 @@ def load_experiment(path="experiment.yaml"):
     return dict(
         formulas=y["formulas"],
         formula_weights=y.get("formula_weights"),   # None -> equal weights
-        signal_maps=signal_maps,
         horizon=y["horizon"],
         modes=y["modes"],
         config=y["config"],

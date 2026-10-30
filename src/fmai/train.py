@@ -6,9 +6,8 @@ from pathlib import Path
 from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 
-from fmai.robustness import WeightedRobustness, Pred, Or, And
 from fmai.agents import Agent
-from fmai.utils import save_history, save_agent, save_gif, ms, dgoal_max, lidar_max, dgoal_avg, lidar_avg
+from fmai.utils import *
 from config import Config
 
 
@@ -25,16 +24,18 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
                 break_when_any_done=False,
             )
 
-    # Return per env and agent: [E, T, A, 1] -> sum over time -> [E, A]
     obs = with_episode_ids(
-        rollout["next", "agents", "observation"], 
-        rollout["next", "done"]
-        )
-    rho = spec(obs)
-    rho = rho.masked_fill((                                 # score only the first episode of each env
-        obs[..., 0, -1] > 0)[..., None], 
-        float("inf")
-        )   
+        rollout["next", "agents", "observation"],
+        rollout["next", "done"],
+    )
+    first_ep = (obs[..., 0, -1] == 0)                       # [E, T], True for steps in the first episode of each env
+
+    # Return per env and agent over the first episode: [E, T, A, 1] -> sum over time -> [E, A]
+    rew = rollout["next", "agents", "reward"]
+    ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)
+
+    rho = spec(obs)                                         # [E, T, A]
+    rho = rho.masked_fill(~first_ep[..., None], float("inf"))   # score only the first episode of each env
     rho_env = rho.amin(dim=(1, 2))                          # [E], worst rho per env
 
     pass_rate, _ = ms((rho_env >= 0).float())
@@ -51,7 +52,6 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
         "rho_std": rho_std,                                 # across envs
         "pass_rate": pass_rate,
     }
-
 
 # ----------------------------- training -----------------------------
 
@@ -133,13 +133,18 @@ def train(
             for idx in perm.split(cfg.MINIBATCH):
                 lv = agent.loss_module(flat[idx])
                 loss = lv["loss_objective"] + lv["loss_critic"] + lv["loss_entropy"]
+
+                # Error handeling -> Check for nans in the loss function
                 if not torch.isfinite(loss):
                     skipped += 1
                     log_skip(it, "loss", lv=lv)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
+
                 loss.backward()
                 gn = nn.utils.clip_grad_norm_(params, 1.0)
+
+                # Error handeling -> Check for nans in the gradients
                 if not torch.isfinite(gn):
                     skipped += 1
                     log_skip(it, "grad", lv=lv, gn=gn)
