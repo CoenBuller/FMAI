@@ -12,47 +12,6 @@ from fmai.utils import save_history, save_agent, save_gif, ms, dgoal_max, lidar_
 from config import Config
 
 
-# ----------------------------- formula spec -----------------------------
-
-def shift(x, dt):
-    """x[t - dt] for x: [E, T]. NaN where t - dt < 0 (undefined)."""
-    out = torch.full_like(x, float("nan"))
-    out[:, dt:] = x[:, :-dt]
-    return out
-
-
-class Defined:
-    """Wrap a margin function; undefined steps count as neutral (0.0) to prevent gradient explosions."""
-    def __init__(self, f):
-        self.f = f
-
-    def __call__(self, obs):
-        # FIX 1: Change -10 to 0.0 so early undefined steps don't explode the gradients
-        return torch.nan_to_num(self.f(obs), nan=float("-inf"))
-
-
-def build_spec():
-    da, dg = lidar_avg, dgoal_avg
-
-    safety_clause = Pred(da, "<", 0.1)
-
-    def branch(dt):
-        # Progress is only demanded if you are safe.
-        return Or(
-            Pred(da, ">=", 0.1),  # Suppress the progress requirement if dodging
-            Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.05)),
-            Pred(dg, "<", 0.1),
-        )
-
-    # The agent must make progress over AT LEAST one of these time windows
-    progress_any = branch(1)
-    
-    # The final rule: Must be safe AND (must make progress when safe)
-    phi = And(safety_clause, progress_any)
-    desc = ["(da(t) >= 0.5 || dg(t - 1) - dg(t) > 0.1 || dg(t) < 0.1) && da(t) > 0.05"]
-    
-    # scale as the native reward, preventing the PPO loss from destabilizing.
-    return WeightedRobustness([phi], weights=None, clip=1.0), desc
 
 
 # ----------------------------- evaluation -----------------------------
@@ -67,11 +26,16 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
             )
 
     # Return per env and agent: [E, T, A, 1] -> sum over time -> [E, A]
-    ret = rollout["next", "agents", "reward"].sum(dim=1).squeeze(-1)
-
-    # Robustness per env: worst value over the episode -> [E]
-    rho = spec(rollout["next", "agents", "observation"])    # [E, T, A], no lag, every step defined
-    rho_env = rho.amin(dim=(1,2))                           # [E], worst rho per env
+    obs = with_episode_ids(
+        rollout["next", "agents", "observation"], 
+        rollout["next", "done"]
+        )
+    rho = spec(obs)
+    rho = rho.masked_fill((                                 # score only the first episode of each env
+        obs[..., 0, -1] > 0)[..., None], 
+        float("inf")
+        )   
+    rho_env = rho.amin(dim=(1, 2))                          # [E], worst rho per env
 
     pass_rate, _ = ms((rho_env >= 0).float())
 
@@ -105,12 +69,16 @@ def train(
 
     modes = {"rho": "robustness", "none": "reward", "mixed": "robustness & reward"}
     mode = cfg.REWARD_MODE
+
     assert mode in modes, f"The given mode is not in possible modes to train the agent. Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
+
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     results_path = Path(cfg.RESULTS_DIR) / "traces" / f"{cfg.RUN_ID}" / f"{stem}.json"
     agent_path = Path(cfg.RESULTS_DIR) / "agents" / f"{cfg.RUN_ID}" / f"{stem}.pt"
     gif_path = Path(cfg.RESULTS_DIR) / "gifs" / f"{cfg.RUN_ID}" / f"{stem}.gif"
+    err_path = Path(cfg.RESULTS_DIR) / "error" / f"{cfg.RUN_ID}.txt"
+    
 
     E = env.batch_size[0]
     assert cfg.EPISODES >= E, f"Number of total episodes is smaller than the number of environments. (cfg.EPISODES={cfg.EPISODES} | E={E})"
@@ -126,24 +94,17 @@ def train(
     for it in range(n_iters):
         # 1. collect one full episode per env (cfg.MAX_STEPS == env max_steps)
         with torch.no_grad():
-            rollout = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
-                                  break_when_any_done=False)
-
-            if kwargs.get("verbal_rollout", False):
-                obs = rollout["next", "agents", "observation"]
-                print("lidar min/max:", obs[..., 6:18].min().item(), obs[..., 6:18].max().item())
-                dg = dgoal_avg(obs)
-                gain = (dg[:, :-1] - dg[:, 1:]).flatten()
-                print("progress/step mean:", gain.mean().item(), " p95:", gain.quantile(0.95).item())
-                print("fraction done:", rollout["next", "done"].float().mean().item())
+            rollout = env.rollout(
+                max_steps=cfg.MAX_STEPS, 
+                policy=agent.policy,
+                break_when_any_done=False
+                )
 
         # 2. reward: env reward, robustness, or both
         rew = rollout["next", "agents", "reward"]
         if mode in ["rho", "mixed"]:
-            rho = spec(rollout["next", "agents", "observation"])        # [E, T], on the device
-
-            if kwargs.get("verbose", False):
-                print(rho)
+            obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
+            rho = spec(obs)        
 
             rho_r = rho[..., None].to(rew.device).expand_as(rew)
             rew = rew + cfg.RHO_COEF * rho_r if mode == "mixed" else rho_r
@@ -166,29 +127,25 @@ def train(
 
         # 4. PPO epochs
         params = list(agent.loss_module.parameters())
-        skipped=0
         flat = rollout.reshape(-1)
         for _ in range(cfg.EPOCHS):
             perm = torch.randperm(flat.shape[0], device=flat.device)
             for idx in perm.split(cfg.MINIBATCH):
                 lv = agent.loss_module(flat[idx])
                 loss = lv["loss_objective"] + lv["loss_critic"] + lv["loss_entropy"]
-            
                 if not torch.isfinite(loss):
                     skipped += 1
-                    if skipped == 1:                       # print which term broke, once
-                        print({k: v.item() for k, v in lv.items() if v.ndim == 0})
+                    log_skip(it, "loss", lv=lv)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
-
                 loss.backward()
                 gn = nn.utils.clip_grad_norm_(params, 1.0)
-
                 if not torch.isfinite(gn):
                     skipped += 1
+                    log_skip(it, "grad", lv=lv, gn=gn)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
-                    
+
                 agent.optim.step()
                 agent.optim.zero_grad()
 
@@ -279,5 +236,4 @@ if __name__ == "__main__":
             spec=spec, 
             spec_desc=spec_desc, 
             cfg=cfg,
-            verbal_rollout=True,
             )
