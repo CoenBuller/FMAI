@@ -1,0 +1,81 @@
+{
+  "config": {
+    "RESULTS_DIR": "results/second",
+    "RENDER": false,
+    "DEVICE": "cuda",
+    "EVAL_INTERVAL": 4,
+    "SEED": 67,
+    "EVAL_EPISODES": 100,
+    "EPISODES": 35000,
+    "REWARD_MODE": "rho",
+    "RHO_COEF": 1,
+    "RUN_ID": "20261030_130120",
+    "HORIZON": 4500,
+    "EVAL_GIF": true,
+    "SCENARIO": "navigation",
+    "NUM_ENVS": 300,
+    "MAX_STEPS": 150,
+    "CONTINUOUS_ACTIONS": true,
+    "MAPPO": false,
+    "DEPTH": 2,
+    "N_NODES": 256,
+    "ACTIVATION": "ReLU",
+    "CLIP_EPS": 0.2,
+    "ENTROPY_COEF": 0.0001,
+    "GAMMA": 0.99,
+    "LAMBDA": 0.95,
+    "LR": 0.0003,
+    "EPOCHS": 10,
+    "MINIBATCH": 20
+  },
+  "formulas": [
+    "dg<=0.1 || exists s in [1,5]: dg(t-s)-dg(t) >= 0.02*s ; and dsep>=0.3"
+  ],
+  "history": [
+    {
+      "episode": 1200,
+      "return_mean": -9.415945053100586,
+      "return_std": 5.143807888031006,
+      "return_agent_std": 3.7812671661376953,
+      "rho_mean": -0.06013676896691322,
+      "rho_std": 0.020164625719189644,
+      "pass_rate": 0.0
+    },
+    {
+      "episode": 2400,
+      "return_mean": -14.89980697631836,
+      "return_std": 9.889898300170898,
+      "return_agent_std": 8.430405616760254,
+      "rho_mean": -0.07299235463142395,
+      "rho_std": 0.021714109927415848,
+      "pass_rate": 0.0
+    },
+    {
+      "episode": 3600,
+      "return_mean": -14.466654777526855,
+      "return_std": 6.935032367706299,
+      "return_agent_std": 5.906809329986572,
+      "rho_mean": -0.07026299089193344,
+      "rho_std": 0.020559819415211678,
+      "pass_rate": 0.0
+    },
+    {
+      "episode": 4800,
+      "return_mean": -16.65665054321289,
+      "return_std": 9.059061050415039,
+      "return_agent_std": 7.8530683517456055,
+      "rho_mean": -0.0711626261472702,
+      "rho_std": 0.01951790414750576,
+      "pass_rate": 0.0
+    },
+    {
+      "episode": 6000,
+      "return_mean": -14.55361270904541,
+      "return_std": 4.867282390594482,
+      "return_agent_std": 3.504802942276001,
+      "rho_mean": -0.06717050075531006,
+      "rho_std": 0.017611244693398476,
+      "pass_rate": 0.0
+    }
+  ]
+}
