@@ -81,9 +81,12 @@ def rho_per_env(spec, rollout):
 #--------------------------- Bookkeeping ----------------------------#
 n_logged = 0
 
-def log_skip(it, why, error_path, lv=None, gn=None):
+import matplotlib.pyplot as plt
+
+def log_skip(it, why, err_path, lv=None, gn=None):
+    err_path = Path(err_path)
     err_path.parent.mkdir(parents=True, exist_ok=True)
-    global n_logged            # drop this and use a list/dict if this lives inside train()
+    global n_logged
     if n_logged >= 50:
         return
     n_logged += 1
@@ -94,6 +97,7 @@ def log_skip(it, why, error_path, lv=None, gn=None):
         row["grad_norm"] = float(gn)
     with open(err_path, "a") as f:
         f.write(json.dumps(row) + "\n")
+
 
 # mean/std that don't give NaN for a single sample
 def ms(x): 
@@ -140,3 +144,95 @@ def save_agent(agent, path):
         },
         path,
     )
+
+def save_plots(history, path):
+    """Plot return, robustness, and PPO loss curves from history."""
+    if not history:
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    eps = [h["episode"] for h in history]
+    ret_mean = np.array([h["return_mean"] for h in history])
+    ret_std = np.array([h["return_std"] for h in history])
+    rho_mean = np.array([h["rho_mean"] for h in history])
+    rho_std = np.array([h["rho_std"] for h in history])
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle("IPPO Training & Evaluation Diagnostics", fontsize=14)
+
+    # 1. Evaluation Return (+/- 1 std) & Train Return
+    ax = axes[0, 0]
+    ax.plot(eps, ret_mean, label="Eval Return", color="tab:blue")
+    ax.fill_between(eps, ret_mean - ret_std, ret_mean + ret_std, color="tab:blue", alpha=0.2)
+    if "train_return" in history[0]:
+        ax.plot(eps, [h["train_return"] for h in history], "--", label="Train Return", color="tab:cyan", alpha=0.8)
+    ax.set_title("Episode Return")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Return")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # 2. Robustness (rho) & Pass Rate
+    ax = axes[0, 1]
+    ax.plot(eps, rho_mean, label="Eval Rho", color="tab:green")
+    ax.fill_between(eps, rho_mean - rho_std, rho_mean + rho_std, color="tab:green", alpha=0.2)
+    ax.axhline(0.0, color="red", linestyle=":", linewidth=1, label="Threshold (0)")
+    ax.set_title("STL/SFO Robustness (rho)")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Robustness")
+    ax.legend(loc="upper left")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = ax.twinx()
+    ax2.plot(eps, [h["pass_rate"] for h in history], color="tab:orange", linestyle="--", label="Pass Rate")
+    ax2.set_ylabel("Pass Rate", color="tab:orange")
+    ax2.set_ylim(-0.05, 1.05)
+
+    # 3. Policy Entropy & KL Divergence
+    ax = axes[0, 2]
+    if "entropy" in history[0]:
+        ax.plot(eps, [h["entropy"] for h in history], color="tab:purple", label="Policy Entropy")
+    ax.set_title("Policy Entropy (Exploration)")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Entropy")
+    ax.grid(True, alpha=0.3)
+    if "kl_approx" in history[0]:
+        ax_kl = ax.twinx()
+        ax_kl.plot(eps, [h["kl_approx"] for h in history], color="tab:brown", linestyle="--", label="Approx KL")
+        ax_kl.set_ylabel("Approx KL", color="tab:brown")
+
+    # 4. Actor (Objective) Loss
+    ax = axes[1, 0]
+    if "loss_objective" in history[0]:
+        ax.plot(eps, [h["loss_objective"] for h in history], color="tab:red")
+    ax.set_title("Actor Loss (loss_objective)")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Loss")
+    ax.grid(True, alpha=0.3)
+
+    # 5. Critic (Value) Loss
+    ax = axes[1, 1]
+    if "loss_critic" in history[0]:
+        ax.plot(eps, [h["loss_critic"] for h in history], color="tab:orange")
+    ax.set_title("Critic Loss (loss_critic)")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Loss")
+    ax.grid(True, alpha=0.3)
+
+    # 6. Gradient Norm & Skipped Updates
+    ax = axes[1, 2]
+    if "grad_norm" in history[0]:
+        ax.plot(eps, [h["grad_norm"] for h in history], color="tab:gray", label="Grad Norm (pre-clip)")
+    ax.set_title("Gradient Norm & Skipped Steps")
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("L2 Norm")
+    ax.grid(True, alpha=0.3)
+    if "skipped_updates" in history[0]:
+        ax_sk = ax.twinx()
+        ax_sk.bar(eps, [h["skipped_updates"] for h in history], width=max(eps[-1] // max(len(eps), 1) * 0.4, 1), alpha=0.3, color="red")
+        ax_sk.set_ylabel("Skipped Updates", color="red")
+
+    plt.tight_layout()
+    plt.savefig(path, dpi=150)
+    plt.close(fig)

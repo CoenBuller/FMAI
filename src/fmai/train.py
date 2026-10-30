@@ -77,33 +77,37 @@ def train(
 
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     results_path = Path(cfg.RESULTS_DIR) / "traces" / f"{cfg.RUN_ID}" / f"{stem}.json"
+    plot_path = Path(cfg.RESULTS_DIR) / "traces" / f"{cfg.RUN_ID}" / f"{stem}.png"
     agent_path = Path(cfg.RESULTS_DIR) / "agents" / f"{cfg.RUN_ID}" / f"{stem}.pt"
     gif_path = Path(cfg.RESULTS_DIR) / "gifs" / f"{cfg.RUN_ID}" / f"{stem}.gif"
     err_path = Path(cfg.RESULTS_DIR) / "error" / f"{cfg.RUN_ID}.txt"
-    
 
     E = env.batch_size[0]
     assert cfg.EPISODES >= E, f"Number of total episodes is smaller than the number of environments. (cfg.EPISODES={cfg.EPISODES} | E={E})"
 
     p_bar = tqdm(
-        total=cfg.EPISODES,
+        total=int(cfg.EPISODES),
         desc="Episode",
         bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
         colour='red',
     )
 
-    n_iters = cfg.EPISODES // E
+    n_iters = int(cfg.EPISODES // E)
     for it in range(n_iters):
-        # 1. collect one full episode per env (cfg.MAX_STEPS == env max_steps)
+        # 1. Collect one full episode per env (cfg.MAX_STEPS == env max_steps)
         with torch.no_grad():
             rollout = env.rollout(
                 max_steps=cfg.MAX_STEPS, 
                 policy=agent.policy,
                 break_when_any_done=False
-                )
+            )
 
-        # 2. reward: env reward, robustness, or both
-        rew = rollout["next", "agents", "reward"]
+        # Track raw native environment return before reward shaping overwrites it
+        raw_rew = rollout["next", "agents", "reward"]
+        train_return = raw_rew.sum(dim=1).mean().item()
+
+        # 2. Reward: env reward, robustness, or both
+        rew = raw_rew
         if mode in ["rho", "mixed"]:
             obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
             rho = spec(obs)                                              # [E, T, A], per-agent margins
@@ -115,64 +119,105 @@ def train(
         for key in ("done", "terminated"):
             rollout["next", "agents", key] = rollout["next", key].unsqueeze(-2).expand_as(rew)
 
-        # 3. advantages (GAE) with the shaped reward
-        with torch.no_grad():
-            agent.loss_module.value_estimator(
-                rollout,
-                params=agent.loss_module.critic_network_params,
-                target_params=agent.loss_module.target_critic_network_params,
-            )
-
         assert torch.isfinite(rollout["next", "agents", "observation"]).all(), "NaN in obs"
         assert torch.isfinite(rew).all(), "NaN in reward"
 
-        # 4. PPO epochs
+        # 3 & 4. PPO epochs with GAE recomputation & loss tracking
         params = list(agent.loss_module.parameters())
-        flat = rollout.reshape(-1)
+        skipped = 0
+        loss_sums = {
+            "loss_total": 0.0,
+            "loss_objective": 0.0,
+            "loss_critic": 0.0,
+            "loss_entropy": 0.0,
+            "entropy": 0.0,
+            "kl_approx": 0.0,
+            "grad_norm": 0.0,
+        }
+        n_updates = 0
+
         for _ in range(cfg.EPOCHS):
+            # Recompute GAE advantages at the start of each epoch as the critic updates
+            with torch.no_grad():
+                agent.loss_module.value_estimator(
+                    rollout,
+                    params=agent.loss_module.critic_network_params,
+                    target_params=agent.loss_module.target_critic_network_params,
+                )
+
+            flat = rollout.reshape(-1)
             perm = torch.randperm(flat.shape[0], device=flat.device)
             for idx in perm.split(cfg.MINIBATCH):
                 lv = agent.loss_module(flat[idx])
                 loss = lv["loss_objective"] + lv["loss_critic"] + lv["loss_entropy"]
 
-                # Error handeling -> Check for nans in the loss function
+                # Error handling -> Check for NaNs in the loss function
                 if not torch.isfinite(loss):
                     skipped += 1
-                    log_skip(it, "loss", lv=lv)
+                    log_skip(it, "loss", err_path, lv=lv)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
 
                 loss.backward()
                 gn = nn.utils.clip_grad_norm_(params, 1.0)
 
-                # Error handeling -> Check for nans in the gradients
+                # Error handling -> Check for NaNs in the gradients
                 if not torch.isfinite(gn):
                     skipped += 1
-                    log_skip(it, "grad", lv=lv, gn=gn)
+                    log_skip(it, "grad", err_path, lv=lv, gn=gn)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
 
                 agent.optim.step()
                 agent.optim.zero_grad()
 
+                # Accumulate batch loss statistics
+                n_updates += 1
+                loss_sums["loss_total"] += loss.item()
+                loss_sums["loss_objective"] += lv["loss_objective"].item()
+                loss_sums["loss_critic"] += lv["loss_critic"].item()
+                loss_sums["loss_entropy"] += lv["loss_entropy"].item()
+                if "entropy" in lv:
+                    loss_sums["entropy"] += lv["entropy"].mean().item()
+                if "kl_approx" in lv:
+                    loss_sums["kl_approx"] += lv["kl_approx"].mean().item()
+                loss_sums["grad_norm"] += float(gn)
+
+        train_stats = {k: (v / max(n_updates, 1)) for k, v in loss_sums.items()}
+        train_stats["train_return"] = train_return
+        train_stats["skipped_updates"] = skipped
+
         # 5. Evaluate agent
         episodes_seen = (it + 1) * E
         if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
-            info = evaluate(eval_env=eval_env, agent=agent, spec=spec, cfg=cfg,
-                            training_episode=episodes_seen)
+            info = evaluate(
+                eval_env=eval_env,
+                agent=agent,
+                spec=spec,
+                cfg=cfg,
+                training_episode=episodes_seen,
+            )
+            info.update(train_stats)
             history.append(info)
             save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, results_path)
+            save_plots(history, plot_path)
             save_agent(agent, agent_path)
 
-            post = {"avg_return": f"{info['return_mean']:.4f}"}
+            post = {
+                "ret": f"{info['return_mean']:.2f}",
+                "loss": f"{info['loss_total']:.3f}",
+                "ent": f"{info['entropy']:.2f}",
+            }
             if mode in ["rho", "mixed"]:
-                post["average_robustness"] = f"{info['rho_mean']:.4f}"
+                post["rho"] = f"{info['rho_mean']:.3f}"
             p_bar.set_postfix(**post)
 
             if kwargs.get("verbose_eval", False):
-                print(f"[eval] ep {episodes_seen}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
-                      f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}  "
-                      f"pass={info['pass_rate']:.2f}")
+                print(
+                    f"[eval] ep {episodes_seen}: return={info['return_mean']:.3f} +/- {info['return_std']:.3f} "
+                    f"(agents {info['return_agent_std']:.3f})  rho={info['rho_mean']:.3f} +/- {info['rho_std']:.3f}  "
+                    f"pass={info['pass_rate']:.2f}  loss={info['loss_total']:.4f}  ent={info['entropy']:.3f}"
+                )
             if cfg.EVAL_GIF:
                 save_gif(eval_env, agent, cfg.MAX_STEPS, gif_path, fps=30)
 
