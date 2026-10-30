@@ -28,18 +28,18 @@ class Defined:
 
     def __call__(self, obs):
         # FIX 1: Change -10 to 0.0 so early undefined steps don't explode the gradients
-        return torch.nan_to_num(self.f(obs), nan=0.0)
+        return torch.nan_to_num(self.f(obs), nan=float("-inf"))
 
 
 def build_spec():
     da, dg = lidar_avg, dgoal_avg
 
-    safety_clause = Pred(da, "<", 0.5)
+    safety_clause = Pred(da, "<", 0.1)
 
     def branch(dt):
         # Progress is only demanded if you are safe.
         return Or(
-            Pred(da, ">=", 0.5),  # Suppress the progress requirement if dodging
+            Pred(da, ">=", 0.1),  # Suppress the progress requirement if dodging
             Defined(Pred(lambda obs: shift(dg(obs), dt) - dg(obs), ">", 0.05)),
             Pred(dg, "<", 0.1),
         )
@@ -129,6 +129,14 @@ def train(
             rollout = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
                                   break_when_any_done=False)
 
+            if kwargs.get("verbal_rollout", False):
+                obs = rollout["next", "agents", "observation"]
+                print("lidar min/max:", obs[..., 6:18].min().item(), obs[..., 6:18].max().item())
+                dg = dgoal_avg(obs)
+                gain = (dg[:, :-1] - dg[:, 1:]).flatten()
+                print("progress/step mean:", gain.mean().item(), " p95:", gain.quantile(0.95).item())
+                print("fraction done:", rollout["next", "done"].float().mean().item())
+
         # 2. reward: env reward, robustness, or both
         rew = rollout["next", "agents", "reward"]
         if mode in ["rho", "mixed"]:
@@ -153,15 +161,34 @@ def train(
                 target_params=agent.loss_module.target_critic_network_params,
             )
 
+        assert torch.isfinite(rollout["next", "agents", "observation"]).all(), "NaN in obs"
+        assert torch.isfinite(rew).all(), "NaN in reward"
+
         # 4. PPO epochs
+        params = list(agent.loss_module.parameters())
+        skipped=0
         flat = rollout.reshape(-1)
         for _ in range(cfg.EPOCHS):
             perm = torch.randperm(flat.shape[0], device=flat.device)
             for idx in perm.split(cfg.MINIBATCH):
                 lv = agent.loss_module(flat[idx])
                 loss = lv["loss_objective"] + lv["loss_critic"] + lv["loss_entropy"]
+            
+                if not torch.isfinite(loss):
+                    skipped += 1
+                    if skipped == 1:                       # print which term broke, once
+                        print({k: v.item() for k, v in lv.items() if v.ndim == 0})
+                    agent.optim.zero_grad(set_to_none=True)
+                    continue
+
                 loss.backward()
-                nn.utils.clip_grad_norm_(agent.loss_module.parameters(), 1.0)
+                gn = nn.utils.clip_grad_norm_(params, 1.0)
+
+                if not torch.isfinite(gn):
+                    skipped += 1
+                    agent.optim.zero_grad(set_to_none=True)
+                    continue
+                    
                 agent.optim.step()
                 agent.optim.zero_grad()
 
@@ -202,7 +229,7 @@ if __name__ == "__main__":
     for mode in ["rho"]:
         cfg = Config(
             DEVICE="cuda",
-            MAX_STEPS=100,
+            MAX_STEPS=150,
             NUM_ENVS=2,
             EPISODES=4,                         # 4 // 2 = 2 training iterations
             EVAL_INTERVAL=1,
@@ -220,6 +247,7 @@ if __name__ == "__main__":
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED,
             device=cfg.DEVICE,
+            
         )
         eval_env = VmasEnv(
             scenario=cfg.SCENARIO,
@@ -250,5 +278,6 @@ if __name__ == "__main__":
             agent=agent,
             spec=spec, 
             spec_desc=spec_desc, 
-            cfg=cfg
+            cfg=cfg,
+            verbal_rollout=True,
             )
