@@ -34,6 +34,10 @@ class Eventually:                # exists s in [a, b]: phi(t - s)
     def __init__(self, f, a, b): self.f, self.a, self.b = f, a, b
     def __call__(self, obs): return _window(self.f(obs), self.a, self.b, "max")
 
+class Defined:                                               # undefined (NaN) -> -inf, so it never wins an Or
+    def __init__(self, f): self.f = f
+    def __call__(self, obs): return torch.nan_to_num(self.f(obs), nan=float("-inf"))
+
 class WeightedRobustness:
     def __init__(self, formulas, weights=None, clip=10.0):
         self.formulas = formulas

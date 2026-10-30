@@ -5,7 +5,7 @@ formula_weights: null   # or null for equal weights
 
 horizon: 150
 
-modes: [mixed, rho, none]
+modes: [rho, none, mixed]
 
 # passed straight into the Config dataclass (field names must match)
 config:

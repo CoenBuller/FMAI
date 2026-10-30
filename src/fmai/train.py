@@ -36,7 +36,7 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
 
     rho = spec(obs)                                         # [E, T, A]
     rho = rho.masked_fill(~first_ep[..., None], float("inf"))   # score only the first episode of each env
-    rho_env = rho.amin(dim=(1, 2))                          # [E], worst rho per env
+    rho_env = rho_per_env(spec, rollout)                    # [E], worst rho per env
 
     pass_rate, _ = ms((rho_env >= 0).float())
 
@@ -106,8 +106,7 @@ def train(
         rew = rollout["next", "agents", "reward"]
         if mode in ["rho", "mixed"]:
             obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
-            rho = spec(obs)        
-
+            rho = spec(obs)                                              # [E, T, A], per-agent margins
             rho_r = rho[..., None].to(rew.device).expand_as(rew)
             rew = rew + cfg.RHO_COEF * rho_r if mode == "mixed" else rho_r
 
