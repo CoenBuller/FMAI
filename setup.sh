@@ -4,7 +4,7 @@
 cd ..
 
 # Clone second repository which is needed for online monitoring. 
-git clone https://github.com/CoenBuller/artifact-fm-qsfo.git
+git clone git@github.com:CoenBuller/artifact-fm-qsfo.git
 
 cd FMAI
 
