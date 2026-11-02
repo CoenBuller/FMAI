@@ -21,7 +21,6 @@ class Agent():
             clip_epsilon=cfg.CLIP_EPS, 
             entropy_coeff=cfg.ENTROPY_COEF, 
             normalize_advantage=True,
-            normalize_advantage_exclude_dims=(-2,)
             )
         
         loss.set_keys(
@@ -95,7 +94,7 @@ class Agent():
         )
 
         loss_module = self.make_loss(env=env, actor=policy, critic=critic, cfg=cfg)
-        optim = torch.optim.AdamW(loss_module.parameters(), lr=cfg.LR)
+        optim = torch.optim.Adam(loss_module.parameters(), lr=cfg.LR)
 
         self.policy = policy 
         self.loss_module = loss_module

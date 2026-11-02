@@ -1,5 +1,6 @@
 import time, yaml, dataclasses
 
+from environment.environment import make_env
 from fmai.train import train, build_spec
 from fmai.agents import Agent
 from config import Config
@@ -39,27 +40,19 @@ def run_all(
         
         shared_rew = cfg.MAPPO or cfg.COMMON_REW
 
-        env = VmasEnv(
-            scenario=cfg.SCENARIO,
+        env = make_env(
+            cfg=cfg,
             num_envs=cfg.NUM_ENVS,
-            continuous_actions=cfg.CONTINUOUS_ACTIONS,
-            max_steps=cfg.MAX_STEPS,
-            seed=cfg.SEED,
-            device=cfg.DEVICE,
-            shared_rew=shared_rew
-        )
+            seed=cfg.SEED
+            )
 
-        eval_env = VmasEnv(
-            scenario=cfg.SCENARIO,
-            num_envs=cfg.EVAL_EPISODES,
-            continuous_actions=cfg.CONTINUOUS_ACTIONS,
-            max_steps=cfg.MAX_STEPS,
-            seed=cfg.SEED + 1, 
-            device=cfg.DEVICE,
-            shared_rew=shared_rew
-        )
-        assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
-
+        eval_env = make_env(
+            cfg=cfg,
+            num_envs=cfg.NUM_ENVS,
+            seed=cfg.SEED+1000
+            )
+            
+        torch.manual_seed(cfg.SEED) 
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
         

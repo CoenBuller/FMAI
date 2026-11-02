@@ -10,7 +10,7 @@ class Config:
     RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 100                                # After how many episodes to do an evaluation run
-    SEED: int = 67                                          # Seed of the environment
+    SEED: int = 1                                           # Seed of the environment
     EVAL_EPISODES: int = 10                                 # How many episodes for evaluation
     EPISODES: int|float = 1e6                               # Number of episodes to train for
     REWARD_MODE: str = "rho"                                # Agent can learn either using robustness (rho), using reward (rew), or mixed

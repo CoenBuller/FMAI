@@ -1,0 +1,55 @@
+{
+  "config": {
+    "RESULTS_DIR": "results/second",
+    "RENDER": false,
+    "DEVICE": "cuda",
+    "EVAL_INTERVAL": 4,
+    "SEED": 67,
+    "EVAL_EPISODES": 100,
+    "EPISODES": 35000,
+    "REWARD_MODE": "none",
+    "RHO_COEF": 1,
+    "RUN_ID": "20261102_104257",
+    "HORIZON": 4500,
+    "EVAL_GIF": true,
+    "SCENARIO": "navigation",
+    "NUM_ENVS": 300,
+    "MAX_STEPS": 150,
+    "CONTINUOUS_ACTIONS": true,
+    "COMMON_REW": false,
+    "MAPPO": true,
+    "DEPTH": 3,
+    "N_NODES": 256,
+    "ACTIVATION": "Tanh",
+    "CLIP_EPS": 0.2,
+    "ENTROPY_COEF": 0.001,
+    "GAMMA": 0.99,
+    "LAMBDA": 0.95,
+    "LR": 0.0003,
+    "EPOCHS": 10,
+    "MINIBATCH": 4096
+  },
+  "formulas": [
+    "dg<=0.1 || exists s in [1,5]: dg(t-s)-dg(t) >= 0.02*s ; and dsep>=0.3"
+  ],
+  "history": [
+    {
+      "episode": 1200,
+      "return_mean": -16.698354721069336,
+      "return_std": 6.290350914001465,
+      "return_agent_std": 7.104777812957764,
+      "rho_mean": -0.07207008451223373,
+      "rho_std": 0.022523781284689903,
+      "pass_rate": 0.0,
+      "loss_total": 0.6000054562633688,
+      "loss_objective": -0.045704779721034525,
+      "loss_critic": 0.6455727696418763,
+      "loss_entropy": 0.00013746521563007263,
+      "entropy": -0.13746520931070502,
+      "kl_approx": -0.16029481241824795,
+      "grad_norm": 3.2297485969283364,
+      "train_return": -15.330649375915527,
+      "skipped_updates": 0
+    }
+  ]
+}

@@ -73,7 +73,6 @@ def train(
 
     assert mode in modes, f"The given mode is not in possible modes to train the agent. Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
-    
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem) 
 
@@ -86,6 +85,14 @@ def train(
         bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
         colour='red',
     )
+
+    STAT_KEYS = ["loss_total", "loss_objective", "loss_critic", "loss_entropy",
+                 "entropy", "kl_approx", "grad_norm", "train_return", "skipped_updates"]
+
+    info0 = evaluate(eval_env=eval_env, agent=agent, spec=spec, cfg=cfg, training_episode=0)
+    info0.update({k: float("nan") for k in STAT_KEYS})       # same keys as later entries, so save_plots works
+    history.append(info0)
+    save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
 
     n_iters = int(cfg.EPISODES // E)
     for it in range(n_iters):
@@ -130,17 +137,14 @@ def train(
             "grad_norm": 0.0,
         }
         n_updates = 0
-
+        with torch.no_grad():
+            agent.loss_module.value_estimator(
+                rollout,
+                params=agent.loss_module.critic_network_params,
+                target_params=agent.loss_module.target_critic_network_params,
+            )
+        flat = rollout.reshape(-1)
         for _ in range(cfg.EPOCHS):
-            # Recompute GAE advantages at the start of each epoch as the critic updates
-            with torch.no_grad():
-                agent.loss_module.value_estimator(
-                    rollout,
-                    params=agent.loss_module.critic_network_params,
-                    target_params=agent.loss_module.target_critic_network_params,
-                )
-
-            flat = rollout.reshape(-1)
             perm = torch.randperm(flat.shape[0], device=flat.device)
             for idx in perm.split(cfg.MINIBATCH):
                 lv = agent.loss_module(flat[idx])
