@@ -1,7 +1,8 @@
 import time, yaml, dataclasses, torch
 
 from environment.environment import make_env
-from fmai.train import train, build_spec
+from fmai.train import train
+from fmai.uitils import build_spec, W
 from fmai.agents import Agent
 from config import Config
 
@@ -36,35 +37,15 @@ def run_all(
     for mode in e["modes"]:
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
         
-        shared_rew = cfg.MAPPO or cfg.COMMON_REW
+        shaped = mode in ["rho", "mixed"]
+        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=W)
+        eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)         # native reward, no shaping
 
-        env = make_env(
-            cfg=cfg,
-            num_envs=cfg.NUM_ENVS,
-            seed=cfg.SEED
-            )
-
-        eval_env = make_env(
-            cfg=cfg,
-            num_envs=cfg.EVAL_EPISODES,
-            seed=cfg.SEED+1000
-            )
-            
-        torch.manual_seed(cfg.SEED) 
+        torch.manual_seed(cfg.SEED)
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
-        print(agent.loss_module.critic_network)
-        
-        trainnig_hist = train(
-            env=env,
-            eval_env=eval_env,
-            agent=agent,
-            spec=spec,
-            spec_desc=spec_desc,
-            horizon=cfg.HORIZON,
-            cfg=cfg,
-            # verbose_eval=True,
-        )
+
+        training_hist = train(env=env, eval_env=eval_env, agent=agent, spec=spec, spec_desc=spec_desc, cfg=cfg)
 
 
 if __name__ == "__main__":
