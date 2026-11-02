@@ -2,7 +2,7 @@ import time, yaml, dataclasses, torch
 
 from environment.environment import make_env
 from fmai.train import train
-from fmai.uitils import build_spec, W
+from fmai.utils import build_spec, W
 from fmai.agents import Agent
 from config import Config
 

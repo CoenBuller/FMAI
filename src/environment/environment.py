@@ -69,3 +69,16 @@ def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
     if spec is not None and mode in ("rho", "mixed"):
         transforms.append(RobustnessReward(spec, window, mode, cfg.RHO_COEF))
     return TransformedEnv(env, Compose(*transforms))
+
+if __name__ == "__main__":
+    from src.config import Config
+    from src.fmai.utils import *
+
+    cfg = Config()
+    spec, _ = build_spec()
+    env = make_env(cfg, 4, 0, spec=spec, mode="rho", window=W)
+    td = env.rollout(150, break_when_any_done=False)                 # random policy
+    obs = with_episode_ids(td["next", "agents", "observation"], td["next", "done"])
+    off = spec(obs).mean(-1)                                          # [E, T]
+    on = td["next", "agents", "reward"][..., 0, 0]                    # [E, T]
+    print((off - on).abs().max())   
