@@ -27,33 +27,38 @@ def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episod
         rollout["next", "agents", "observation"],
         rollout["next", "done"],
     )
-    first_ep = (obs[..., 0, -1] == 0)                       # [E, T], True for steps in the first episode of each env
+    first_ep = (obs[..., 0, -1] == 0)                       # [E, T]
 
-    # Return per env and agent over the first episode: [E, T, A, 1] -> sum over time -> [E, A]
     rew = rollout["next", "agents", "reward"]
-    ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)
+    ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)    # [E, A]
 
-    rho = spec(obs)                                         # [E, T, A]
-    rho = rho.masked_fill(~first_ep[..., None], float("inf"))   # score only the first episode of each env
-    rho_env = rho_per_env(spec, rollout)                    # [E], worst rho per env
-
+    rho_env = rho_per_env(spec, rollout)                    # [E], worst first-order rho per env
     pass_rate, _ = ms((rho_env >= 0).float())
 
-    ret_mean, ret_std = ms(ret.mean(dim=1))                 # per-env return averaged over agents, then stats across envs
-    _, ret_agent_std = ms(ret.std(dim=1, correction=0))     # how much agents differ within an env
+    ret_mean, ret_std = ms(ret.mean(dim=1))
+    _, ret_agent_std = ms(ret.std(dim=1, correction=0))
     rho_mean, rho_std = ms(rho_env)
 
+    # Reference metrics from the NavigationSFO info
+    inf = rollout["next", "agents", "info"]
+    mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)         # [E, T, A]
+    sep = mu2.amin(dim=1).amin(dim=-1)                                # [E], worst separation margin
+    all_at_goal = (mu1 >= 0).all(dim=-1)                              # [E, T]
 
     return {
         "episode": training_episode,
         "return_mean": ret_mean,
-        "return_std": ret_std,                              # across envs
-        "return_agent_std": ret_agent_std,                  # across agents (avg over envs)
+        "return_std": ret_std,
+        "return_agent_std": ret_agent_std,
         "rho_mean": rho_mean,
-        "rho_std": rho_std,                                 # across envs
+        "rho_std": rho_std,
         "pass_rate": pass_rate,
+        "native_return": inf["native_rew"].squeeze(-1).sum(dim=1).mean().item(),
+        "success_rate": all_at_goal[:, -1].float().mean().item(),
+        "violation_rate": (sep < 0).float().mean().item(),
+        "min_separation": (sep + 0.3).mean().item(),
+        "collision_steps": (inf["collisions"].squeeze(-1).sum(dim=(1, 2)) / 2).mean().item(),
     }
-
 # ----------------------------- training -----------------------------
 
 def train(
@@ -112,8 +117,8 @@ def train(
         rew = raw_rew
         if mode in ["rho", "mixed"]:
             obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
-            rho = spec(obs)                                              # [E, T, A], per-agent margins
-            rho_r = rho[..., None].to(rew.device).expand_as(rew)
+            rho = spec(obs)                                                     # [E, T, A], per-agent margins
+            rho_r = rho.mean(-1)[..., None, None].to(rew.device).expand_as(rew)   # team value, same for every agent
             rew = rew + cfg.RHO_COEF * rho_r if mode == "mixed" else rho_r
 
         rollout["next", "agents", "reward"] = rew
@@ -218,13 +223,12 @@ def train(
                     f"pass={info['pass_rate']:.2f}  loss={info['loss_total']:.4f}  ent={info['entropy']:.3f}"
                 )
             if cfg.EVAL_GIF:
-                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
+                save_gif(eval_env.base_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
         p_bar.update(n=E)
-
     p_bar.close()
     save_agent(agent, paths["Agent"])
-    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Agent"], fps=30)
+    save_gif(eval_env.base_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
     return history
 
 

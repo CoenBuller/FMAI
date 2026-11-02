@@ -1,5 +1,6 @@
 from torchrl.envs import StepCounter, TransformedEnv
 from navigation_sfo import NavigationSFO
+from torchrl.envs.libs.vmas import VmasEnv
 
 def make_env(cfg, num_envs, seed):
     env = VmasEnv(

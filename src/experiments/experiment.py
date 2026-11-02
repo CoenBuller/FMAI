@@ -1,4 +1,4 @@
-import time, yaml, dataclasses
+import time, yaml, dataclasses, torch
 
 from environment.environment import make_env
 from fmai.train import train, build_spec
@@ -19,9 +19,7 @@ def load_experiment(path="experiment.yaml"):
         raise KeyError(f"Not Config fields: {sorted(bad)}")
 
     return dict(
-        formulas=y["formulas"],
         formula_weights=y.get("formula_weights"),   # None -> equal weights
-        horizon=y["horizon"],
         modes=y["modes"],
         config=y["config"],
     )
@@ -48,7 +46,7 @@ def run_all(
 
         eval_env = make_env(
             cfg=cfg,
-            num_envs=cfg.NUM_ENVS,
+            num_envs=cfg.EVAL_EPISODES,
             seed=cfg.SEED+1000
             )
             

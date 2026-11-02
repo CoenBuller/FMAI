@@ -1,20 +1,13 @@
-formulas: 
-  -  "exists dt in [1, 2]. (da(t) >= 0.2 || dg(t - dt) - dg(t) > 0.2 || dg(t) < 0.5)"
-
-formula_weights: null   # or null for equal weights
-
-horizon: 150
-
 modes: [none, mixed, rho]
 
 # passed straight into the Config dataclass (field names must match)
 config:
     RENDER: False
     DEVICE: "cuda"
-    EVAL_INTERVAL: 20                                 # After how many episodes to do an evaluation run
+    EVAL_INTERVAL: 4                                  # After how many episodes to do an evaluation run
     SEED: 67                                          # Seed of the environment
     EVAL_EPISODES: 100                                # How many episodes for evaluation
-    EPISODES: 3000000                                 # Number of episodes to train for
+    EPISODES: 33300                                    # Number of episodes to train for
     RHO_COEF: 1
     HORIZON: 4500
     EVAL_GIF: True
@@ -28,7 +21,7 @@ config:
     
     # Agent architecture
     MAPPO: True                                       # Set to True to use MAPPO. False defaults to IPPO
-    DEPTH: 3                                          # Number of hidden layers
+    DEPTH: 2                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
     ACTIVATION: "Tanh"                                # Activaton function 
 
