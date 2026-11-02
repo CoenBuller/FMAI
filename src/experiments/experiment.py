@@ -67,5 +67,5 @@ def run_all(
 
 
 if __name__ == "__main__":
-    path = "src/experiments/experiment_1.yaml"
+    path = "src/experiments/test.yaml"
     run_all(path=path)

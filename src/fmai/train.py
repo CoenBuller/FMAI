@@ -226,6 +226,8 @@ def train(
                 save_gif(eval_env.base_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
         p_bar.update(n=E)
+
+    print(rollout["next", "terminated"][:, -1].float().mean(), rollout["next", "truncated"][:, -1].float().mean())
     p_bar.close()
     save_agent(agent, paths["Agent"])
     save_gif(eval_env.base_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)

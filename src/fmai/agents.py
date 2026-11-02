@@ -52,7 +52,7 @@ class Agent():
                 obs_dim, 
                 2 * act_dim, 
                 n_agents=A, 
-                centralised=False,
+                centralized=False,
                 share_params=True, 
                 depth=cfg.DEPTH, 
                 num_cells=cfg.N_NODES,
@@ -82,7 +82,7 @@ class Agent():
                 obs_dim, 
                 1, 
                 n_agents=A, 
-                centralised=cfg.MAPPO,   # MAPPO is handled here
+                centralized=cfg.MAPPO,   # MAPPO is handled here
                 share_params=True, 
                 depth=cfg.DEPTH, 
                 num_cells=cfg.N_NODES,
