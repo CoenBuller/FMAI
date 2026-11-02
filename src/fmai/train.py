@@ -112,13 +112,12 @@ def train(
         # Track raw native environment return before reward shaping overwrites it
         raw_rew = rollout["next", "agents", "reward"]
         train_return = raw_rew.sum(dim=1).mean().item()
-
         # 2. Reward: env reward, robustness, or both
         rew = raw_rew
         if mode in ["rho", "mixed"]:
             obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
             rho = spec(obs)                                                     # [E, T, A], per-agent margins
-            rho_r = rho.mean(-1)[..., None, None].to(rew.device).expand_as(rew)   # team value, same for every agent
+            rho_r = rho.sum(-1)[..., None, None].to(rew.device).expand_as(rew)   # team value, same for every agent
             rew = rew + cfg.RHO_COEF * rho_r if mode == "mixed" else rho_r
 
         rollout["next", "agents", "reward"] = rew
@@ -227,7 +226,6 @@ def train(
 
         p_bar.update(n=E)
 
-    print(rollout["next", "terminated"][:, -1].float().mean(), rollout["next", "truncated"][:, -1].float().mean())
     p_bar.close()
     save_agent(agent, paths["Agent"])
     save_gif(eval_env.base_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)

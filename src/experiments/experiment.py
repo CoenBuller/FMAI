@@ -53,6 +53,7 @@ def run_all(
         torch.manual_seed(cfg.SEED) 
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
+        print(agent.loss_module.critic_network)
         
         trainnig_hist = train(
             env=env,
@@ -67,5 +68,5 @@ def run_all(
 
 
 if __name__ == "__main__":
-    path = "src/experiments/test.yaml"
+    path = "src/experiments/experiment_1.yaml"
     run_all(path=path)
