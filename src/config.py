@@ -4,8 +4,6 @@ from typing import Literal
 from dataclasses import dataclass
 from torch.nn import Tanh, ReLU, Sigmoid
 
-
-
 @dataclass
 class Config:
     RESULTS_DIR: str = "results/second"
@@ -26,6 +24,7 @@ class Config:
     NUM_ENVS: int = 5
     MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
     CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
+    COMMON_REW: bool = False                                # Added flag for shared/common reward
 
     #---------------------------------- Agent Config ----------------------------------#
     

@@ -12,7 +12,6 @@ from config import Config
 
 
 
-
 # ----------------------------- evaluation -----------------------------
 
 def evaluate(eval_env: VmasEnv, agent: Agent, spec, cfg: Config, training_episode: int, **kwargs):
@@ -74,13 +73,9 @@ def train(
 
     assert mode in modes, f"The given mode is not in possible modes to train the agent. Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
-
+    
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
-    results_path = Path(cfg.RESULTS_DIR) / "traces" / f"{cfg.RUN_ID}" / f"{stem}.json"
-    plot_path = Path(cfg.RESULTS_DIR) / "traces" / f"{cfg.RUN_ID}" / f"{stem}.png"
-    agent_path = Path(cfg.RESULTS_DIR) / "agents" / f"{cfg.RUN_ID}" / f"{stem}.pt"
-    gif_path = Path(cfg.RESULTS_DIR) / "gifs" / f"{cfg.RUN_ID}" / f"{stem}.gif"
-    err_path = Path(cfg.RESULTS_DIR) / "error" / f"{cfg.RUN_ID}.txt"
+    paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem) 
 
     E = env.batch_size[0]
     assert cfg.EPISODES >= E, f"Number of total episodes is smaller than the number of environments. (cfg.EPISODES={cfg.EPISODES} | E={E})"
@@ -154,7 +149,7 @@ def train(
                 # Error handling -> Check for NaNs in the loss function
                 if not torch.isfinite(loss):
                     skipped += 1
-                    log_skip(it, "loss", err_path, lv=lv)
+                    log_skip(it, "loss", paths["Error"], lv=lv)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
 
@@ -164,7 +159,7 @@ def train(
                 # Error handling -> Check for NaNs in the gradients
                 if not torch.isfinite(gn):
                     skipped += 1
-                    log_skip(it, "grad", err_path, lv=lv, gn=gn)
+                    log_skip(it, "grad", paths["Error"], lv=lv, gn=gn)
                     agent.optim.zero_grad(set_to_none=True)
                     continue
 
@@ -199,9 +194,9 @@ def train(
             )
             info.update(train_stats)
             history.append(info)
-            save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, results_path)
-            save_plots(history, plot_path)
-            save_agent(agent, agent_path)
+            save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
+            save_plots(history, paths["Image"])
+            save_agent(agent, paths["Agent"])
 
             post = {
                 "ret": f"{info['return_mean']:.2f}",
@@ -219,20 +214,18 @@ def train(
                     f"pass={info['pass_rate']:.2f}  loss={info['loss_total']:.4f}  ent={info['entropy']:.3f}"
                 )
             if cfg.EVAL_GIF:
-                save_gif(eval_env, agent, cfg.MAX_STEPS, gif_path, fps=30)
+                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
         p_bar.update(n=E)
 
     p_bar.close()
-    save_agent(agent, agent_path)
-    save_gif(eval_env, agent, cfg.MAX_STEPS, gif_path, fps=30)
+    save_agent(agent, paths["Agent"])
+    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Agent"], fps=30)
     return history
 
 
 if __name__ == "__main__":
-    """Smoke run test of the robustness training loop."""
     import time
-
     spec, spec_desc = build_spec()
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
 
@@ -241,7 +234,7 @@ if __name__ == "__main__":
             DEVICE="cuda",
             MAX_STEPS=150,
             NUM_ENVS=2,
-            EPISODES=4,                         # 4 // 2 = 2 training iterations
+            EPISODES=4,
             EVAL_INTERVAL=1,
             EPOCHS=2,
             MINIBATCH=100,
@@ -250,6 +243,7 @@ if __name__ == "__main__":
             RUN_ID=run_id,
         )
 
+        shared_rew = cfg.MAPPO or cfg.COMMON_REW
         env = VmasEnv(
             scenario=cfg.SCENARIO,
             num_envs=cfg.NUM_ENVS,
@@ -257,7 +251,7 @@ if __name__ == "__main__":
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED,
             device=cfg.DEVICE,
-            
+            shared_rew=shared_rew,
         )
         eval_env = VmasEnv(
             scenario=cfg.SCENARIO,
@@ -266,16 +260,15 @@ if __name__ == "__main__":
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED + 1,
             device=cfg.DEVICE,
+            shared_rew=shared_rew,
         )
         assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
-
-        
 
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
 
-        agent_pos = env.agents[0] # or env.world.agents[0] depending on VMAS version
-        goal = agent_pos.goal     # In NavigationSFO, each agent has a referenced goal
+        agent_pos = env.agents[0]
+        goal = agent_pos.goal
 
         print(f"Agent radius: {agent_pos.shape.radius}")
         print(f"Goal radius: {goal.shape.radius}")

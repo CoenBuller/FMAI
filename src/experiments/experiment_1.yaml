@@ -27,7 +27,7 @@ config:
     #---------------------------------- Agent Config ----------------------------------#
     
     # Agent architecture
-    MAPPO: False                                      # Set to True to use MAPPO. False defaults to IPPO
+    MAPPO: True                                       # Set to True to use MAPPO. False defaults to IPPO
     DEPTH: 3                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
     ACTIVATION: "Tanh"                                # Activaton function 
@@ -39,6 +39,6 @@ config:
     LAMBDA: 0.95                                      # Lambda parameter for Generalized Advantage Estimate (GAE)
 
     # Optimizer
-    LR: 3.0e-4                                          # Learning rate
+    LR: 3.0e-4                                        # Learning rate
     EPOCHS: 10                                        # Parameter update epochs
     MINIBATCH: 4096   

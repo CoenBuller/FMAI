@@ -11,7 +11,6 @@ def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
         y = yaml.safe_load(f)    
 
-
     # catch typos in Config field names early
     valid = {f.name for f in dataclasses.fields(Config)}
     bad = set(y["config"]) - valid
@@ -35,17 +34,19 @@ def run_all(
 
     spec, spec_desc = build_spec()
 
-
     for mode in e["modes"]:
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
         
+        shared_rew = cfg.MAPPO or cfg.COMMON_REW
+
         env = VmasEnv(
             scenario=cfg.SCENARIO,
             num_envs=cfg.NUM_ENVS,
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED,
-            device=cfg.DEVICE
+            device=cfg.DEVICE,
+            shared_rew=shared_rew
         )
 
         eval_env = VmasEnv(
@@ -54,14 +55,14 @@ def run_all(
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             max_steps=cfg.MAX_STEPS,
             seed=cfg.SEED + 1, 
-            device=cfg.DEVICE
+            device=cfg.DEVICE,
+            shared_rew=shared_rew
         )
         assert env.max_steps == cfg.MAX_STEPS == eval_env.max_steps
 
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
-        g = agent.optim.param_groups[0]
-
+        
         trainnig_hist = train(
             env=env,
             eval_env=eval_env,
@@ -77,5 +78,3 @@ def run_all(
 if __name__ == "__main__":
     path = "src/experiments/experiment_1.yaml"
     run_all(path=path)
-
-

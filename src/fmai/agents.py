@@ -6,8 +6,6 @@ from tensordict.nn.distributions import NormalParamExtractor
 from torchrl.modules import MultiAgentMLP, ProbabilisticActor, TanhNormal, ValueOperator
 from torchrl.objectives import ClipPPOLoss, ValueEstimators
 
-
-
 class Agent():
     def __init__(self):
         self.policy = None
@@ -15,7 +13,7 @@ class Agent():
         self.optim = None
         self.actor_net = None
 
-   def make_loss(self, env, actor, critic, cfg):
+    def make_loss(self, env, actor, critic, cfg):
 
         loss = ClipPPOLoss(
             actor, 
@@ -23,8 +21,8 @@ class Agent():
             clip_epsilon=cfg.CLIP_EPS, 
             entropy_coeff=cfg.ENTROPY_COEF, 
             normalize_advantage=True,
-            loss_critic_type="smooth_l1",
-        )
+            normalize_advantage_exclude_dims=(-2,)
+            )
         
         loss.set_keys(
             reward=env.reward_key, 
@@ -32,14 +30,14 @@ class Agent():
             value=("agents", "state_value"),
             sample_log_prob=("agents", "action_log_prob"), 
             done=("agents", "done"),
-            terminated=("agents", "terminated"),
-        )
+            terminated=("agents", "terminated")
+            )
         
         loss.make_value_estimator(
             ValueEstimators.GAE, 
             gamma=cfg.GAMMA, 
-            lmbda=cfg.LAMBDA,
-        )
+            lmbda=cfg.LAMBDA
+            )
         
         return loss
 
@@ -60,26 +58,23 @@ class Agent():
                 depth=cfg.DEPTH, 
                 num_cells=cfg.N_NODES,
                 activation_class=cfg.get_activation(), 
-                device=cfg.DEVICE,
-            ),
-            NormalParamExtractor(scale_lb=0.1),  # Prevent std from collapsing to 1e-6
+                device=cfg.DEVICE
+                ),
+            NormalParamExtractor(),
         )
 
         policy = ProbabilisticActor(
             module=TensorDictModule(
                 actor_net, 
                 in_keys=[("agents", "observation")],
-                out_keys=[("agents", "loc"), ("agents", "scale")],
-            ),
+                out_keys=[("agents", "loc"), ("agents", "scale")]
+                ),
             spec=act_spec,
             in_keys=[("agents", "loc"), ("agents", "scale")],
             out_keys=[env.action_key],
             distribution_class=TanhNormal,
-            distribution_kwargs={
-                "low": act_spec[env.action_key].space.low,
-                "high": act_spec[env.action_key].space.high,
-                "tanh_loc": True,  # CRITICAL: bounds pre-tanh mean so TanhNormal never saturates!
-            },
+            distribution_kwargs={"low": act_spec[env.action_key].space.low,
+                                "high": act_spec[env.action_key].space.high},
             return_log_prob=True,
         )
 
@@ -88,13 +83,13 @@ class Agent():
                 obs_dim, 
                 1, 
                 n_agents=A, 
-                centralised=cfg.MAPPO,
+                centralised=cfg.MAPPO,   # MAPPO is handled here
                 share_params=True, 
                 depth=cfg.DEPTH, 
                 num_cells=cfg.N_NODES,
                 activation_class=cfg.get_activation(), 
-                device=cfg.DEVICE,
-            ),
+                device=cfg.DEVICE
+                ),
             in_keys=[("agents", "observation")],
             out_keys=[("agents", "state_value")],
         )

@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
@@ -79,9 +80,18 @@ def rho_per_env(spec, rollout):
 
 
 #--------------------------- Bookkeeping ----------------------------#
+
+def create_paths(base_dir, run_id, stem):
+    paths = {
+        "History": Path(base_dir) / "traces" / f"{run_id}" / f"{stem}.json",
+        "Image": Path(base_dir) / "traces" / f"{run_id}" / f"{stem}.png",
+        "Agent": Path(base_dir) / "agents" / f"{run_id}" / f"{stem}.pt",
+        "Gif": Path(base_dir) / "gifs" / f"{run_id}" / f"{stem}.gif",
+        "Error": Path(base_dir) / "error" / f"{run_id}.txt",
+    }
+    return paths
 n_logged = 0
 
-import matplotlib.pyplot as plt
 
 def log_skip(it, why, err_path, lv=None, gn=None):
     err_path = Path(err_path)
