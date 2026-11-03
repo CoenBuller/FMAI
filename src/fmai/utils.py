@@ -21,7 +21,6 @@ def dlidar(obs):
     return obs[..., 6:18].amax(dim=-1)
 
 
-
 # ------------------------ TRAIN UTILITIES ---------------------------
 
 def with_episode_ids(obs, done):
@@ -30,6 +29,9 @@ def with_episode_ids(obs, done):
     seg = d.cumsum(1) - d                                    # index of the episode a step belongs to
     ch = seg[..., None, None].expand(*obs.shape[:3], 1).to(obs.dtype)
     return torch.cat([obs, ch], dim=-1)
+
+def first_episode_mask(obs):                                 # [E,T] True for steps of the first episode
+    return obs[..., 0, -1] == 0
 
 def lag(x, s, seg):
     """x[t - s] for x: [E,T,A]; NaN if t < s or t - s lies in an earlier episode. seg: [E,T]."""
@@ -40,25 +42,21 @@ def lag(x, s, seg):
     same[:, s:] = seg[:, s:] == seg[:, :-s]
     return torch.where(same[..., None], out, torch.full_like(out, nan))
 
-def dgoal_i(obs):                                            # |p_i - g_i|, obs[4:6] = pos - goal     -> [E,T,A]
-    return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
-
-def dsep_i(obs):                                             # min distance to any other agent        -> [E,T,A]
-    E, T, A, _ = obs.shape
-    p = obs[..., 0:2].reshape(E * T, A, 2)
-    d = torch.cdist(p, p) + 1e6 * torch.eye(A, device=obs.device)
-    return d.min(-1).values.reshape(E, T, A)
-
-def first_episode_mask(obs):                                 # [E,T] True for steps of the first episode
-    return obs[..., 0, -1] == 0
-
-
-V, W, EPS, D = 0.02, 5, 0.1, 0.3     # required progress/step, max lag, goal radius, safety distance
 
 def progress_branch(s):
     """dg(t-s) - dg(t) >= V*s   (margin: gain - V*s)"""
-    gain = lambda o: lag(dgoal_i(o), s, o[..., 0, -1]) - dgoal_i(o)
+    gain = lambda o: lag(dgoal(o), s, o[..., 0, -1]) - dgoal(o)
     return Defined(Pred(gain, ">=", V * s))
+
+def rho_per_env(spec, rollout):
+    """Evaluation robustness: worst margin over the first episode (after the first W steps) and all agents -> [E]."""
+    obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
+    rho = spec(obs)                                          # [E,T,A]
+    valid = first_episode_mask(obs).clone()
+    valid[:, :W] = False                                     # lags undefined at the start
+    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
+
+V, W, EPS, D = 0.02, 5, 0.1, 0.3     # required progress/step, max lag, goal radius, safety distance
 
 def build_spec():
     """At every step: (at goal  OR  progressed over some window s<=W)  AND  separated from all other agents."""
@@ -69,13 +67,7 @@ def build_spec():
     desc = [f"dg<={EPS} || exists s in [1,{W}]: dg(t-s)-dg(t) >= {V}*s ; and dsep>={D}"]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
 
-def rho_per_env(spec, rollout):
-    """Evaluation robustness: worst margin over the first episode (after the first W steps) and all agents -> [E]."""
-    obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
-    rho = spec(obs)                                          # [E,T,A]
-    valid = first_episode_mask(obs).clone()
-    valid[:, :W] = False                                     # lags undefined at the start
-    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
+
 
 
 
