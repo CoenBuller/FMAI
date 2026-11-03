@@ -80,15 +80,26 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     n_iters = int(cfg.EPISODES // E)
     updates_per_iter = cfg.EPOCHS * (frames_per_batch // cfg.MINIBATCH)
 
-    collector = Collector(env, agent.policy, frames_per_batch=frames_per_batch,
-                          total_frames=n_iters * frames_per_batch,
-                          device=cfg.DEVICE, storing_device=cfg.DEVICE)
-    buffer = ReplayBuffer(storage=LazyTensorStorage(frames_per_batch, device=cfg.DEVICE),
-                          sampler=SamplerWithoutReplacement(), batch_size=cfg.MINIBATCH)
+    collector = Collector(
+        env, agent.policy, 
+        frames_per_batch=frames_per_batch,
+        total_frames=n_iters * frames_per_batch,
+        device=cfg.DEVICE, 
+        storing_device=cfg.DEVICE,
+        auto_register_policy_transforms=True,
+        )
 
-    p_bar = tqdm(total=n_iters * E, desc="Episode",
-                 bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
-                 colour='red')
+    buffer = ReplayBuffer(
+        storage=LazyTensorStorage(frames_per_batch, device=cfg.DEVICE),
+        sampler=SamplerWithoutReplacement(), batch_size=cfg.MINIBATCH
+        )
+
+    p_bar = tqdm(
+        total=n_iters * E, 
+        desc="Episode",
+        bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+        colour='red'
+        )
 
     STAT_KEYS = ["loss_total", "loss_objective", "loss_critic", "loss_entropy", "entropy", "kl_approx",
                  "grad_norm", "train_return", "train_reward", "skipped_updates"]

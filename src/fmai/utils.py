@@ -10,6 +10,8 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 
 from fmai.robustness import WeightedRobustness, Pred, Or, And, Defined, Not
 
+W = 1
+
 # ------------------------ MONITOR UTILITIES ---------------------------
 
 def with_episode_ids(obs, done):
@@ -58,20 +60,21 @@ def vgoal(s):
 
 def vagent(s):
     gain = lambda o: lag(dlidar(o), s, o[..., 0, -1]) - dlidar(o)
-
+    return gain
 
 
 def build_spec():
     """At every step: (at goal  OR  progressed over some window s<=W)  AND  separated from all other agents."""
+    
     dg = Pred(dgoal, "<=", 0.1)
-    vg = Defined(Pred(vgoal(1), ">=", 0.05))
-    da = Pred(dlidar, "<", 0.7)
-    va = Defined(Pred(vagent(1), ">", 0.05))
+    vg = [Defined(Pred(vgoal(s), ">=", 0.05*s)) for s in range(1, 1+W)]
+    da = Pred(dlidar, "<", 0.2)
+    va = [Defined(Pred(vagent(s), ">", 0.05*s)) for s in range(1, 1+W)]
     phi = And(
-        Or(Not(da), dg, vg),
-        Or(da, va),
+        Or(Not(da), dg, *vg),
+        Or(da, *va),
     )
-    desc = [f"dg<={0.1} || dg(t-1)-dg(t) >= {0.05} ; and dsep>={0.7}"]
+    desc = [f"dg<={0.1} || dg(t-1)-dg(t) >= {0.05} ; and dsep>={0.2}"]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
 
 

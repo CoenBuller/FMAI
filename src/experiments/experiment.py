@@ -1,13 +1,24 @@
 import time, yaml, dataclasses, torch
+import argparse
 
 from environment.environment import make_env
 from fmai.train import train
-from fmai.utils import build_spec
+from fmai.utils import build_spec, W
 from fmai.agents import Agent
 from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run experiment")
+    parser.add_argument(
+        "--exp",
+        type=str,
+        required=True,
+        help="Path to experiment .yaml config",
+    )
+
+    return parser.parse_args()
 
 def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
@@ -38,7 +49,7 @@ def run_all(
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
         
         shaped = mode in ["rho", "mixed"]
-        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=2)
+        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=W)
         eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)         # native reward, no shaping
 
         torch.manual_seed(cfg.SEED)
@@ -49,5 +60,6 @@ def run_all(
 
 
 if __name__ == "__main__":
-    path = "src/experiments/experiment_1.yaml"
+    args = parse_args()
+    path = f"src/experiments/{args.exp}"
     run_all(path=path)
