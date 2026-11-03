@@ -1,4 +1,4 @@
-modes: [mixed, rho]
+modes: [rho]
 
 # passed straight into the Config dataclass (field names must match)
 config:
