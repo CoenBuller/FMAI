@@ -2,7 +2,7 @@ import time, yaml, dataclasses, torch
 
 from environment.environment import make_env
 from fmai.train import train
-from fmai.utils import build_spec, W
+from fmai.utils import build_spec
 from fmai.agents import Agent
 from config import Config
 
@@ -38,7 +38,7 @@ def run_all(
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
         
         shaped = mode in ["rho", "mixed"]
-        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=W)
+        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=2)
         eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)         # native reward, no shaping
 
         torch.manual_seed(cfg.SEED)

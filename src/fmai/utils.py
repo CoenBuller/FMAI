@@ -8,20 +8,9 @@ from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 
-from fmai.robustness import WeightedRobustness, Pred, Or, And, Defined
+from fmai.robustness import WeightedRobustness, Pred, Or, And, Defined, Not
 
 # ------------------------ MONITOR UTILITIES ---------------------------
-
-# Helper function to get the maximum euclidean distance to the goal between agents
-
-def dgoal(obs):                      
-    return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
-
-def dlidar(obs):
-    return obs[..., 6:18].amax(dim=-1)
-
-
-# ------------------------ TRAIN UTILITIES ---------------------------
 
 def with_episode_ids(obs, done):
     """Append the episode index of each step as the last channel. obs: [E,T,A,D], done: [E,T,1]."""
@@ -33,6 +22,26 @@ def with_episode_ids(obs, done):
 def first_episode_mask(obs):                                 # [E,T] True for steps of the first episode
     return obs[..., 0, -1] == 0
 
+# Used during the evaluation run. 
+def rho_per_env(spec, rollout):
+    """Evaluation robustness: worst robustness per environment (after the first W steps) -> [E]."""
+    obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
+    rho = spec(obs)                                          # [E,T,A]
+    valid = first_episode_mask(obs).clone()
+    valid[:, :W] = False                                     # lags undefined at the start
+    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
+
+
+# ------------------------ SFO specification ---------------------------
+
+# Helper function to get the maximum euclidean distance to the goal between agents
+
+def dgoal(obs):                      
+    return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
+
+def dlidar(obs):
+    return obs[..., 6:18].amax(dim=-1)
+
 def lag(x, s, seg):
     """x[t - s] for x: [E,T,A]; NaN if t < s or t - s lies in an earlier episode. seg: [E,T]."""
     nan = float("nan")
@@ -42,33 +51,28 @@ def lag(x, s, seg):
     same[:, s:] = seg[:, s:] == seg[:, :-s]
     return torch.where(same[..., None], out, torch.full_like(out, nan))
 
-
-def progress_branch(s):
+def vgoal(s):
     """dg(t-s) - dg(t) >= V*s   (margin: gain - V*s)"""
     gain = lambda o: lag(dgoal(o), s, o[..., 0, -1]) - dgoal(o)
-    return Defined(Pred(gain, ">=", V * s))
+    return gain
 
-def rho_per_env(spec, rollout):
-    """Evaluation robustness: worst margin over the first episode (after the first W steps) and all agents -> [E]."""
-    obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
-    rho = spec(obs)                                          # [E,T,A]
-    valid = first_episode_mask(obs).clone()
-    valid[:, :W] = False                                     # lags undefined at the start
-    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
+def vagent(s):
+    gain = lambda o: lag(dlidar(o), s, o[..., 0, -1]) - dlidar(o)
 
-V, W, EPS, D = 0.02, 5, 0.1, 0.3     # required progress/step, max lag, goal radius, safety distance
+
 
 def build_spec():
     """At every step: (at goal  OR  progressed over some window s<=W)  AND  separated from all other agents."""
+    dg = Pred(dgoal, "<=", 0.1)
+    vg = Defined(Pred(vgoal(1), ">=", 0.05))
+    da = Pred(dlidar, "<", 0.7)
+    va = Defined(Pred(vagent(1), ">", 0.05))
     phi = And(
-        Or(Pred(dgoal_i, "<=", EPS), *[progress_branch(s) for s in range(1, W + 1)]),
-        Pred(dsep_i, ">=", D),
+        Or(Not(da), dg, vg),
+        Or(da, va),
     )
-    desc = [f"dg<={EPS} || exists s in [1,{W}]: dg(t-s)-dg(t) >= {V}*s ; and dsep>={D}"]
+    desc = [f"dg<={0.1} || dg(t-1)-dg(t) >= {0.05} ; and dsep>={0.7}"]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
-
-
-
 
 
 #--------------------------- Bookkeeping ----------------------------#
