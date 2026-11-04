@@ -14,10 +14,11 @@ class RobustnessReward(Transform):
     spec on that window. Only the last step is used. Undefined lags are NaN, which `Defined` turns into -inf.
     """
 
-    def __init__(self, spec, window, mode, coef):
+    def __init__(self, spec, window, mode, coef, shared_rew=False):
         super().__init__(in_keys=[], out_keys=[])
         self.spec, self.window, self.mode, self.coef = spec, window, mode, coef
         self.hist = None                                             # [E, window+1, A, D]
+        self.shared_rew = shared_rew
 
     def _reset(self, tensordict, tensordict_reset):
         if self.hist is not None:                                    # clear the history of the envs that reset
@@ -36,27 +37,31 @@ class RobustnessReward(Transform):
         self.hist = torch.roll(self.hist, -1, dims=1)
         self.hist[:, -1] = obs
 
-        o = torch.cat([self.hist, torch.zeros_like(self.hist[..., :1])], dim=-1)   # zero episode-id channel
-        rho = self.spec(o)[:, -1]                                    # [E, A]: margins at the current step
+        o = torch.cat([self.hist, torch.zeros_like(self.hist[..., :1])], dim=-1)    # zero episode-id channel
+        rho = self.spec(o)[:, -1]                                                   # [E, A]: margins at the current step
 
-        rew = next_tensordict.get(("agents", "reward"))              # [E, A, 1]
-        rho_r = rho.mean(-1)[:, None, None].expand_as(rew)           # team value, same for every agent
+        rew = next_tensordict.get(("agents", "reward"))                             # [E, A, 1]
+        if self.shared_rew:
+            rho_r = rho.mean(-1)[:, None, None].expand_as(rew)                      # team value, same for every agent
+        else:
+            rho[:,:, None].expand_as(rew)
+
         new = rew + self.coef * rho_r if self.mode == "mixed" else rho_r
         next_tensordict.set(("agents", "reward"), new)
         return next_tensordict
 
 
-def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
+def make_env(cfg, spec=None, mode="none", window=5):
     """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
     env = VmasEnv(
         scenario=NavigationSFO(),
-        num_envs=num_envs,
-        continuous_actions=True,
+        num_envs=cfg.NUM_ENVS,
+        continuous_actions=cfg.CONTINUOUS_ACTIONS,
         device=cfg.DEVICE,
-        seed=seed,
-        n_agents=4,
-        shared_rew=True,
+        seed=cfg.SEED,
+        n_agents=cfg.NUM_AGENTS,
+        shared_rew=cfg.SHARED_REW,
         reward="native",
         eps=0.1,
         safety_distance=0.3,
@@ -67,7 +72,14 @@ def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
     )
     transforms = [StepCounter(max_steps=cfg.MAX_STEPS)]              # time limit = truncation
     if spec is not None and mode in ("rho", "mixed"):
-        transforms.append(RobustnessReward(spec, window, mode, cfg.RHO_COEF))
+        rho_rew = RobustnessReward(
+            spec=spec,
+            window=window,
+            mode=mode,
+            coef=cfg.RHO_COEF,
+            shared_rew=cfg.SHARED_REW,
+        )
+        transforms.append(rho_rew)
     return TransformedEnv(env, Compose(*transforms))
 
 if __name__ == "__main__":

@@ -111,17 +111,18 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
 
     params = list(agent.loss_module.parameters())
 
-    for it, td in enumerate(collector):                                  # td: [E, T], reward already shaped by the env
+    for it, td in enumerate(collector):                                             # td: [E, T], reward already shaped by the env
         expand_done(td)
 
         inf = td["next", "agents", "info"]
-        train_return = inf["native_rew"].sum(dim=1).mean().item()        # native return, whatever the mode
-        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()   # the reward the agent trains on
+        train_return = inf["native_rew"].sum(dim=1).mean().item()                   # native return, whatever the mode
+        if cfg.MAPPO or cfg.SHARED_REW:
+            train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()  # the reward the agent trains on
 
         assert torch.isfinite(td["next", "agents", "observation"]).all(), "NaN in obs"
         assert torch.isfinite(td["next", "agents", "reward"]).all(), "NaN in reward"
 
-        with torch.no_grad():                                            # advantages once per batch
+        with torch.no_grad():                                                       # advantages, once per batch
             agent.loss_module.value_estimator(
                 td,
                 params=agent.loss_module.critic_network_params,
@@ -172,23 +173,28 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
         train_stats.update(train_return=train_return, train_reward=train_reward, skipped_updates=skipped)
 
         if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
+
+            # Run evaluation episodes and store results
             info = evaluate(eval_env, agent, spec, cfg, training_episode=(it + 1) * E)
             info.update(train_stats)
             history.append(info)
+
+            # Save the evaluation results as .json, in a figure, and the agents.
             save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
             save_plots(history, paths["Image"])
             save_agent(agent, paths["Agent"])
-
-            post = {"ret": f"{info['native_return']:.2f}", "succ": f"{info['success_rate']:.2f}",
-                    "ent": f"{info['entropy']:.2f}"}
+            
+            # For progress bar
+            post = {
+                "ret": f"{info['native_return']:.2f}", 
+                "succ": f"{info['success_rate']:.2f}",
+                "ent": f"{info['entropy']:.2f}"
+                }
             if mode in ["rho", "mixed"]:
                 post["rho"] = f"{info['rho_mean']:.3f}"
             p_bar.set_postfix(**post)
 
-            if kwargs.get("verbose_eval", False):
-                print(f"[eval] it {it + 1}: native={info['native_return']:.3f} success={info['success_rate']:.2f} "
-                      f"viol={info['violation_rate']:.2f} rho={info['rho_mean']:.3f} "
-                      f"ent={info['entropy']:.3f} gn={info['grad_norm']:.2f}")
+            # Save gif if cfg.EVAL_GIF == True
             if cfg.EVAL_GIF:
                 save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
