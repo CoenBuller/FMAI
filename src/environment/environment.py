@@ -40,26 +40,26 @@ class RobustnessReward(Transform):
         o = torch.cat([self.hist, torch.zeros_like(self.hist[..., :1])], dim=-1)    # zero episode-id channel
         rho = self.spec(o)[:, -1]                                                   # [E, A]: margins at the current step
 
-        rew = next_tensordict.get(("agents", "reward"))                             # [E, A, 1]
+        rew = next_tensordict.get(("agents", "reward"))              # [E, A, 1]
         if self.shared_rew:
-            rho_r = rho.mean(-1)[:, None, None].expand_as(rew)                      # team value, same for every agent
+            rho_r = rho.mean(-1)[:, None, None].expand_as(rew)       # team value, same for every agent
         else:
-            rho[:,:, None].expand_as(rew)
+            rho_r = rho[..., None].expand_as(rew)
 
         new = rew + self.coef * rho_r if self.mode == "mixed" else rho_r
         next_tensordict.set(("agents", "reward"), new)
         return next_tensordict
 
 
-def make_env(cfg, spec=None, mode="none", window=5):
+def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
     """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
     env = VmasEnv(
         scenario=NavigationSFO(),
-        num_envs=cfg.NUM_ENVS,
+        num_envs=num_envs,
         continuous_actions=cfg.CONTINUOUS_ACTIONS,
         device=cfg.DEVICE,
-        seed=cfg.SEED,
+        seed=seed,
         n_agents=cfg.NUM_AGENTS,
         shared_rew=cfg.SHARED_REW,
         reward="native",
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     cfg = Config()
     spec, _ = build_spec()
-    env = make_env(cfg, 4, 0, spec=spec, mode="rho", window=W)
+    env = make_env(cfg, spec=spec, mode="rho", window=W)
     td = env.rollout(150, break_when_any_done=False)                 # random policy
     obs = with_episode_ids(td["next", "agents", "observation"], td["next", "done"])
     off = spec(obs).mean(-1)                                          # [E, T]

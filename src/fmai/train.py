@@ -116,8 +116,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
 
         inf = td["next", "agents", "info"]
         train_return = inf["native_rew"].sum(dim=1).mean().item()                   # native return, whatever the mode
-        if cfg.MAPPO or cfg.SHARED_REW:
-            train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()  # the reward the agent trains on
+        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()      # the reward the agent trains on
+
 
         assert torch.isfinite(td["next", "agents", "observation"]).all(), "NaN in obs"
         assert torch.isfinite(td["next", "agents", "reward"]).all(), "NaN in reward"

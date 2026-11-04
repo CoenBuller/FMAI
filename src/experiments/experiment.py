@@ -49,8 +49,22 @@ def run_all(
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
         
         shaped = mode in ["rho", "mixed"]
-        env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec if shaped else None, mode=mode, window=W)
-        eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)         # native reward, no shaping
+        env = make_env(
+            cfg, 
+            num_envs=cfg.NUM_ENVS, 
+            seed=cfg.SEED, 
+            spec=spec if shaped else None, 
+            mode=mode, 
+            window=W
+            )
+        eval_env = make_env(
+            cfg, 
+            num_envs=cfg.EVAL_EPISODES, 
+            seed=cfg.SEED + 1000,
+            spec=None,
+            mode="none",
+            window=W,
+            )        
 
         torch.manual_seed(cfg.SEED)
         agent = Agent()

@@ -25,8 +25,9 @@ class Config:
     NUM_AGENTS: int = 4
     MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
     CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
-    COMMON_REW: bool = False                                # Added flag for shared/common reward
+    SHARED_REW: bool = False                                # Added flag for shared/common reward
 
+    
     #---------------------------------- Agent Config ----------------------------------#
     
     # Agent architecture
@@ -55,6 +56,9 @@ class Config:
     EPOCHS: int = 10                                        # Parameter update epochs
     MINIBATCH: int = 20                                     # How many steps to update over at once
 
+    def __post_init__(self):
+        if self.MAPPO:
+            self.SHARED_REW = True    # MAPPO implies a team reward
     #---------------------------------- Retrieving variables ----------------------------------#
     @property
     def variables(self):
