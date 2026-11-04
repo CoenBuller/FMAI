@@ -16,7 +16,7 @@ config:
     SCENARIO: "navigation"
     NUM_ENVS: 300
     MAX_STEPS: 150                                    # Defines the horizon. None is infinite horizon.
-    COMMON_REW: False
+    SHARED_REW: False
 
     #---------------------------------- Agent Config ----------------------------------#
     
