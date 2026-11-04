@@ -66,14 +66,18 @@ def vagent(s):
 def build_spec():
     """At every step: (at goal  OR  progressed over some window s<=W)  AND  separated from all other agents."""
     
+    # Predicates 
     dg = Pred(dgoal, "<=", 0.1)
-    vg = [Defined(Pred(vgoal(s), ">=", 0.05*s)) for s in range(1, 1+W)]
+    vg = [Defined(Pred(vgoal(s), ">", 0.0)) for s in range(1, 1+W)]
     da = Pred(dlidar, "<", 0.2)
-    va = [Defined(Pred(vagent(s), "<", 0.05*s)) for s in range(1, 1+W)]
+    va = [Defined(Pred(vagent(s), ">", 0.0)) for s in range(1, 1+W)]
+
+    # SFO formula in CNF form
     phi = And(
-        Or(dg, *vg),
+        Or(Not(da), dg, *vg),
         da,
     )
+
     desc = [f"dg<={0.1} || dg(t-1)-dg(t) >= {0.05} ; and dsep>={0.2}"]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
 

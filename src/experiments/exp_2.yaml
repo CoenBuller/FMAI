@@ -1,4 +1,4 @@
-modes: [rho]
+modes: [rho, mixed, none]
 
 # passed straight into the Config dataclass (field names must match)
 config:
@@ -16,15 +16,16 @@ config:
     SCENARIO: "navigation"
     NUM_ENVS: 300
     MAX_STEPS: 150                                    # Defines the horizon. None is infinite horizon.
+    COMMON_REW: False
 
     #---------------------------------- Agent Config ----------------------------------#
     
     # Agent architecture
-    MAPPO: True                                       # Set to True to use MAPPO. False defaults to IPPO
+    MAPPO: False                                      # Set to True to use MAPPO. False defaults to IPPO
     DEPTH: 2                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
     ACTIVATION: "Tanh"                                # Activaton function 
-
+    
     # PPO Loss
     CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss
     ENTROPY_COEF: 1.0e-4                              # Entropy coeficient to regularize action probabilities
