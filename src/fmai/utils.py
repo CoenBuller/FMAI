@@ -8,7 +8,8 @@ from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 
-from fmai.robustness import WeightedRobustness, Pred, Or, And, Defined, Not
+from fmai.sfo import TAU1, TAU2
+
 
 W = 1
 
@@ -32,7 +33,6 @@ def rho_per_env(spec, rollout):
     valid = first_episode_mask(obs).clone()
     valid[:, :W] = False                                     # lags undefined at the start
     return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
-
 
 
 
