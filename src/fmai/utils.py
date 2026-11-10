@@ -11,7 +11,7 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 from fmai.sfo import TAU1, TAU2
 
 
-W = 1
+W = TAU1 + TAU2
 
 # ------------------------ MONITOR UTILITIES ---------------------------
 

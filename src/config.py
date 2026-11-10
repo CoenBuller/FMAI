@@ -9,7 +9,7 @@ class Config:
     RESULTS_DIR: str = "results/second"
     RENDER: bool = False
     DEVICE: str = "cuda"
-    EVAL_INTERVAL: int = 100                                # After how many episodes to do an evaluation run
+    EVAL_INTERVAL: int = 100                                # After how many rollouts to do an evaluation run
     SEED: int = 1                                           # Seed of the environment
     EVAL_EPISODES: int = 10                                 # How many episodes for evaluation
     EPISODES: int|float = 1e6                               # Number of episodes to train for
