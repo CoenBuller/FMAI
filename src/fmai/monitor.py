@@ -8,19 +8,19 @@ from qsfo.polyhedron import INFTY, NEG_INFTY, frac
 from qsfo.parser import Parser
 
 
-# @dataclass(frozen=True)
-# class Sig:
-#     agent: int | slice = 0
-#     obs: int | slice = 0
-#     agg: tuple[tuple[str, int], ...] = (("min", -1),)   # (function, axis) steps, applied in order
+@dataclass(frozen=True)
+class Sig:
+    agent: int | slice = 0
+    obs: int | slice = 0
+    agg: tuple[tuple[str, int], ...] = (("min", -1),)   # (function, axis) steps, applied in order
 
-# def extract(obs: Tensor, spec: Sig) -> Tensor:
-#     """obs: [E, T, A, D] -> [E, T]. Applies each aggregation step to the selected entries."""
-#     sel = obs[:, :, spec.agent, spec.obs]               # [E, T, ...]
-#     for name, axis in spec.agg:
-#         sel = AGG[name](sel, axis=axis)
-#     assert sel.ndim == 2, f"selection not reduced to [E, T], got {sel.shape}"
-#     return sel
+def extract(obs: Tensor, spec: Sig) -> Tensor:
+    """obs: [E, T, A, D] -> [E, T]. Applies each aggregation step to the selected entries."""
+    sel = obs[:, :, spec.agent, spec.obs]               # [E, T, ...]
+    for name, axis in spec.agg:
+        sel = AGG[name](sel, axis=axis)
+    assert sel.ndim == 2, f"selection not reduced to [E, T], got {sel.shape}"
+    return sel
 
 
 class WeighedRobustnessTracker():
