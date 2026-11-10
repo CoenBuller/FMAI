@@ -3,8 +3,8 @@ import argparse
 
 from environment.environment import make_env
 from fmai.train import train
-from fmai.utils import build_spec, W
 from fmai.agents import Agent
+from fmai.sfo import build_spec, TAU2, TAU1
 from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
@@ -55,7 +55,7 @@ def run_all(
             seed=cfg.SEED, 
             spec=spec if shaped else None, 
             mode=mode, 
-            window=W
+            window=TAU2+TAU1
             )
         eval_env = make_env(
             cfg, 
@@ -63,7 +63,7 @@ def run_all(
             seed=cfg.SEED + 1000,
             spec=None,
             mode="none",
-            window=W,
+            window=TAU2+TAU1,
             )        
 
         torch.manual_seed(cfg.SEED)

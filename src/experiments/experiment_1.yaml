@@ -4,7 +4,7 @@ modes: [none, mixed, rho]
 config:
     RENDER: False
     DEVICE: "cuda"
-    EVAL_INTERVAL: 4                                  # After how many episodes to do an evaluation run
+    EVAL_INTERVAL: 10                                 # After how many episodes to do an evaluation run
     SEED: 1                                           # Seed of the environment
     EVAL_EPISODES: 100                                # How many episodes for evaluation
     EPISODES: 33300                                   # Number of episodes to train for

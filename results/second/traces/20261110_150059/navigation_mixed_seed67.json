@@ -1,0 +1,62 @@
+{
+  "config": {
+    "RESULTS_DIR": "results/second",
+    "RENDER": false,
+    "DEVICE": "cuda",
+    "EVAL_INTERVAL": 4,
+    "SEED": 67,
+    "EVAL_EPISODES": 100,
+    "EPISODES": 1200,
+    "REWARD_MODE": "mixed",
+    "RHO_COEF": 1,
+    "RUN_ID": "20261110_150059",
+    "HORIZON": 4500,
+    "EVAL_GIF": true,
+    "SCENARIO": "navigation",
+    "NUM_ENVS": 300,
+    "NUM_AGENTS": 4,
+    "MAX_STEPS": 150,
+    "CONTINUOUS_ACTIONS": true,
+    "SHARED_REW": true,
+    "MAPPO": true,
+    "DEPTH": 2,
+    "N_NODES": 256,
+    "ACTIVATION": "Tanh",
+    "CLIP_EPS": 0.2,
+    "ENTROPY_COEF": 0.0001,
+    "GAMMA": 0.99,
+    "LAMBDA": 0.95,
+    "LR": 0.0003,
+    "EPOCHS": 10,
+    "MINIBATCH": 4096
+  },
+  "formulas": [
+    "$\\forall t: (\\neg da(t-\\tau_1) \\vee v_g(t) \\vee d_g(t))\\wedge(da(t-\\tau_1 -\\tau_2) \\vee  da(t)) \\wedge d_a^{+}(t)$"
+  ],
+  "history": [
+    {
+      "episode": 0,
+      "return_mean": -0.3960256576538086,
+      "return_std": 1.433454990386963,
+      "return_agent_std": 1.3105247020721436,
+      "rho_mean": NaN,
+      "rho_std": NaN,
+      "pass_rate": 0.0,
+      "native_return": -0.3960256576538086,
+      "success_rate": 0.0,
+      "violation_rate": 0.11999999731779099,
+      "min_separation": 0.48756080865859985,
+      "collision_steps": 0.5099999904632568,
+      "loss_total": NaN,
+      "loss_objective": NaN,
+      "loss_critic": NaN,
+      "loss_entropy": NaN,
+      "entropy": NaN,
+      "kl_approx": NaN,
+      "grad_norm": NaN,
+      "train_return": NaN,
+      "train_reward": NaN,
+      "skipped_updates": NaN
+    }
+  ]
+}
