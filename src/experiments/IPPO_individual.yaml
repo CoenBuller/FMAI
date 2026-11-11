@@ -1,10 +1,10 @@
-modes: [rho, mixed, none]
+modes: [none, mixed, rho]
 
 # passed straight into the Config dataclass (field names must match)
 config:
     RENDER: False
     DEVICE: "cuda"
-    EVAL_INTERVAL: 4                                  # After how many episodes to do an evaluation run
+    EVAL_INTERVAL: 10                                 # After how many episodes to do an evaluation run
     SEED: 1                                           # Seed of the environment
     EVAL_EPISODES: 100                                # How many episodes for evaluation
     EPISODES: 33300                                   # Number of episodes to train for
@@ -16,7 +16,6 @@ config:
     SCENARIO: "navigation"
     NUM_ENVS: 300
     MAX_STEPS: 150                                    # Defines the horizon. None is infinite horizon.
-    SHARED_REW: False
 
     #---------------------------------- Agent Config ----------------------------------#
     
@@ -25,7 +24,9 @@ config:
     DEPTH: 2                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
     ACTIVATION: "Tanh"                                # Activaton function 
-    
+    SHARED_REW: False                                 # Added flag for shared/common reward
+
+
     # PPO Loss
     CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss
     ENTROPY_COEF: 1.0e-4                              # Entropy coeficient to regularize action probabilities

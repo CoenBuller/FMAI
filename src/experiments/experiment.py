@@ -18,7 +18,24 @@ def parse_args():
         help="Path to experiment .yaml config",
     )
 
+    parser.add_argument("--n_agents", type=int, default=None)
+    parser.add_argument("--mappo", type=bool, default=True)
+    parser.add_argument("--shared_reward", type=bool, default=False)
+    parser.add_argument("--seed", type=int, default=None)
     return parser.parse_args()
+
+def cli_overrides(args):
+    cli_overrides = {}
+    if args.env is not None:
+        cli_overrides["N_AGENTS"] = args.n_agents
+    if args.seed is not None:
+        cli_overrides["SEED"] = args.seed
+    if args.mappo is not None:
+        cli_overrides["MAPPO"] = args.mappo
+    if args.shared_reward is not None:
+        cli_overrides["SHARED_REW"] = args.shared_rewards
+
+    return cli_overrides
 
 def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
@@ -37,16 +54,21 @@ def load_experiment(path="experiment.yaml"):
     )
 
 def run_all(
+    args,
     path="experiment.yaml",
     ):
 
     e = load_experiment(path)
     run_id = time.strftime("%Y%m%d_%H%M%S")
+    overwrites = cli_overrides(args=args)
 
     spec, spec_desc = build_spec()
 
     for mode in e["modes"]:
         cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
+        for key, value in overwrites.items():
+            cfg[key] = value
+        
         
         shaped = mode in ["rho", "mixed"]
         env = make_env(
@@ -76,4 +98,4 @@ def run_all(
 if __name__ == "__main__":
     args = parse_args()
     path = f"src/experiments/{args.exp}"
-    run_all(path=path)
+    run_all(args, path=path)

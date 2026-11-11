@@ -59,6 +59,9 @@ class Config:
     def __post_init__(self):
         if self.MAPPO:
             self.SHARED_REW = True    # MAPPO implies a team reward
+
+    def __setitem__(self, key, value):
+        self.__dict__[key] = value
     #---------------------------------- Retrieving variables ----------------------------------#
     @property
     def variables(self):
