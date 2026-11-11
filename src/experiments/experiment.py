@@ -1,5 +1,10 @@
 import time, yaml, dataclasses, torch
 import argparse
+import warnings
+# Ignore those suckers
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 from environment.environment import make_env
 from fmai.train import train
@@ -8,6 +13,7 @@ from fmai.sfo import build_spec, TAU2, TAU1
 from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
+
 
 def str_to_bool(v):
     if isinstance(v, bool):
