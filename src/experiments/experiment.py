@@ -9,6 +9,15 @@ from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
 
+def str_to_bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got {v}.")
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run experiment")
     parser.add_argument(
@@ -17,25 +26,26 @@ def parse_args():
         required=True,
         help="Path to experiment .yaml config",
     )
-
     parser.add_argument("--n_agents", type=int, default=None)
-    parser.add_argument("--mappo", type=bool, default=True)
-    parser.add_argument("--shared_reward", type=bool, default=False)
+    parser.add_argument("--mappo", type=str_to_bool, default=None)
+    parser.add_argument("--shared_reward", type=str_to_bool, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--results_dir", type=str, default=None)
     return parser.parse_args()
 
 def cli_overrides(args):
-    cli_overrides = {}
-    if args.env is not None:
-        cli_overrides["N_AGENTS"] = args.n_agents
+    overrides = {}
+    if args.n_agents is not None:
+        overrides["NUM_AGENTS"] = args.n_agents
     if args.seed is not None:
-        cli_overrides["SEED"] = args.seed
+        overrides["SEED"] = args.seed
     if args.mappo is not None:
-        cli_overrides["MAPPO"] = args.mappo
+        overrides["MAPPO"] = args.mappo
     if args.shared_reward is not None:
-        cli_overrides["SHARED_REW"] = args.shared_rewards
-
-    return cli_overrides
+        overrides["SHARED_REW"] = args.shared_reward
+    if args.results_dir is not None:
+        overrides["RESULTS_DIR"] = args.results_dir
+    return overrides
 
 def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
@@ -65,10 +75,8 @@ def run_all(
     spec, spec_desc = build_spec()
 
     for mode in e["modes"]:
-        cfg = Config(**e["config"], REWARD_MODE=mode, RUN_ID=run_id)
-        for key, value in overwrites.items():
-            cfg[key] = value
-        
+        merged_cfg = {**e["config"], **overwrites, "REWARD_MODE": mode, "RUN_ID": run_id}
+        cfg = Config(**merged_cfg)
         
         shaped = mode in ["rho", "mixed"]
         env = make_env(
