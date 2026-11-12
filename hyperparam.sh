@@ -2,8 +2,8 @@
 
 RESULTS_DIR="${RESULTS_DIR:-results/hyperparam}"
 SEEDS="${SEEDS:-30 31 32 33 34 35}"
-MAPPO="${MAPPO:-True False}"
-N_AGENTS="${N_AGENTS:-4 5 6 7 8 9 10}"
+MAPPO="${MAPPO:-False}"
+N_AGENTS="${N_AGENTS:-4 5 6 7 8}"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
