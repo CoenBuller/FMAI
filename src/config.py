@@ -6,7 +6,7 @@ from torch.nn import Tanh, ReLU, Sigmoid
 
 @dataclass
 class Config:
-    RESULTS_DIR: str = "results/second"
+    RESULTS_DIR: str = "results/luc"
     RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 100                                # After how many rollouts to do an evaluation run

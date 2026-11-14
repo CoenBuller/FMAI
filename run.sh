@@ -7,6 +7,7 @@ if [ -z "$1" ]; then
 fi
 
 CONFIG_PATH="$1.yaml"
+echo "config: $CONFIG_PATH"
 
 # Forward the path to your python module
 uv run -m src.experiments.experiment --exp "$CONFIG_PATH"

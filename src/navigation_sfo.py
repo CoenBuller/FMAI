@@ -2,7 +2,7 @@
 
 Changes to the original scenario, applied in both conditions:
   - agents and goals spawn at least `spawn_spacing` apart, so the separation spec is satisfiable,
-  - episodes never end early (only the time limit in train.py ends them),
+  - episodes never end early (only the time limit in train_old.py ends them),
   - info reports the native reward, collisions, positions and the SFO terms, whatever reward is trained on.
 
 Per agent i the SFO spec is   F G (mu1_i >= 0)  and  G (mu2_i >= 0)   with

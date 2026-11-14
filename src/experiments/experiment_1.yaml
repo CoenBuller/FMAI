@@ -23,7 +23,7 @@ config:
     MAPPO: True                                       # Set to True to use MAPPO. False defaults to IPPO
     DEPTH: 2                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
-    ACTIVATION: "Tanh"                                # Activaton function 
+    ACTIVATION: "ReLu"                                # Activaton function
 
     # PPO Loss
     CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss

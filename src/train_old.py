@@ -1,8 +1,8 @@
 """MAPPO on VMAS Navigation: native reward (A) vs SFO robustness reward (B), evaluated with the same metrics.
 
 Run from the repository root:
-    uv run python src/train.py                  # every reward and seed below, PARALLEL_RUNS at a time
-    uv run python src/train.py robustness 0     # a single run
+    uv run python src/train_old.py                  # every reward and seed below, PARALLEL_RUNS at a time
+    uv run python src/train_old.py robustness 0     # a single run
     uv run python src/analyze.py                # figures from all finished runs
 Per run, in results/: <reward>_seed<seed>.csv (metrics per evaluation), _traces.npz (final evaluation, per step),
 .pt (trained actor), .gif (one evaluation episode) and .log (printed progress).
@@ -233,7 +233,7 @@ def train(reward, seed):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3:  # a single run: python src/train.py <reward> <seed>
+    if len(sys.argv) == 3:  # a single run: python src/train_old.py <reward> <seed>
         train(sys.argv[1], int(sys.argv[2]))
     else:  # every run as its own process, PARALLEL_RUNS at a time, each printing to results/<reward>_seed<seed>.log
         todo = [(reward, seed) for reward in REWARDS for seed in SEEDS]

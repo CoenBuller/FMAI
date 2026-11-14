@@ -1,4 +1,4 @@
-"""Figures and a summary table from the runs written by train.py. Edit the lists below to choose what is shown;
+"""Figures and a summary table from the runs written by train_old.py. Edit the lists below to choose what is shown;
 nothing needs to be retrained.
 
 Run from the repository root:  uv run python src/analyze.py
