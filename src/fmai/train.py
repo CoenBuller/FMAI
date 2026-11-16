@@ -22,7 +22,9 @@ def expand_done(td):
 
 # ----------------------------- evaluation -----------------------------
 
-def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, **kwargs):
+def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_step: int, **kwargs):
+    """All metrics use only the first episode of each eval env (with early stopping, envs reset and continue).
+    spec=None -> spec-independent reference robustness from the scenario's mu1/mu2 (Config GOAL_EPS, SAFETY_DIST)."""
     with torch.no_grad():
         with set_exploration_type(ExplorationType.DETERMINISTIC):
             rollout = eval_env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
@@ -30,35 +32,41 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
 
     obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
     first_ep = (obs[..., 0, -1] == 0)                                    # [E, T]
+    m = first_ep[..., None]                                              # [E, T, 1]
 
     rew = rollout["next", "agents", "reward"]                            # native: the eval env has no shaping
     ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)       # [E, A]
 
-    rho_env = rho_per_env(spec, rollout)                                 # [E], first-order spec robustness
+    # Reference metrics from the NavigationSFO info
+    inf = rollout["next", "agents", "info"]
+    mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)            # [E, T, A]
+    sep = mu2.masked_fill(~m, float("inf")).amin(dim=1).amin(dim=-1)     # [E], worst separation margin
+    all_at_goal = (mu1 >= 0).all(dim=-1)                                 # [E, T]
+    last = first_ep.sum(dim=1, keepdim=True) - 1                         # [E, 1], last step of the first episode
+
+    if spec is None:                                                     # every agent eventually reaches its goal AND never too close
+        reach = mu1.masked_fill(~m, float("-inf")).amax(dim=1)           # [E, A]
+        rho_env = torch.minimum(reach, mu2.masked_fill(~m, float("inf")).amin(dim=1)).amin(dim=-1)
+    else:
+        rho_env = rho_per_env(spec, rollout)                             # [E], first-order spec robustness
     pass_rate, _ = ms((rho_env >= 0).float())
     ret_mean, ret_std = ms(ret.mean(dim=1))
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))
     rho_mean, rho_std = ms(rho_env)
 
-    # Reference metrics from the NavigationSFO info
-    inf = rollout["next", "agents", "info"]
-    mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)            # [E, T, A]
-    sep = mu2.amin(dim=1).amin(dim=-1)                                   # [E], worst separation margin
-    all_at_goal = (mu1 >= 0).all(dim=-1)                                 # [E, T]
-
     return {
-        "episode": training_episode,
+        "step": training_step,
         "return_mean": ret_mean,
         "return_std": ret_std,
         "return_agent_std": ret_agent_std,
         "rho_mean": rho_mean,
         "rho_std": rho_std,
         "pass_rate": pass_rate,
-        "native_return": inf["native_rew"].squeeze(-1).sum(dim=1).mean().item(),
-        "success_rate": all_at_goal[:, -1].float().mean().item(),
+        "native_return": (inf["native_rew"].squeeze(-1) * m).sum(dim=1).mean().item(),
+        "success_rate": all_at_goal.gather(1, last).float().mean().item(),
         "violation_rate": (sep < 0).float().mean().item(),
         "min_separation": (sep + 0.3).mean().item(),
-        "collision_steps": (inf["collisions"].squeeze(-1).sum(dim=(1, 2)) / 2).mean().item(),
+        "collision_steps": ((inf["collisions"].squeeze(-1) * m).sum(dim=(1, 2)) / 2).mean().item(),
     }
 
 
@@ -71,14 +79,13 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     mode = cfg.REWARD_MODE
     assert mode in modes, f"Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
-    stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
+    stem = f"{cfg.SCENARIO}_{option_label(cfg)}_seed{cfg.SEED}"
     paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem)
 
     E = env.batch_size[0]
-    assert cfg.EPISODES >= E, f"EPISODES ({cfg.EPISODES}) is smaller than the number of envs ({E})"
-
     frames_per_batch = E * cfg.MAX_STEPS
-    n_iters = int(cfg.EPISODES // E)
+    n_iters = int(cfg.STEPS // frames_per_batch)                        # budget in env steps, not episodes
+    assert n_iters >= 1, f"STEPS ({cfg.STEPS}) is smaller than one batch (NUM_ENVS*MAX_STEPS = {frames_per_batch})"
     updates_per_iter = cfg.EPOCHS * (frames_per_batch // cfg.MINIBATCH)
 
     collector = Collector(
@@ -96,8 +103,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
         )
 
     p_bar = tqdm(
-        total=n_iters * E, 
-        desc="Episode",
+        total=n_iters * frames_per_batch,
+        desc="Step",
         bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
         colour='red'
         )
@@ -105,7 +112,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     STAT_KEYS = ["loss_total", "loss_objective", "loss_critic", "loss_entropy", "entropy", "kl_approx",
                  "grad_norm", "train_return", "train_reward", "skipped_updates"]
 
-    info0 = evaluate(eval_env, agent, spec, cfg, training_episode=0)     # untrained agent
+    info0 = evaluate(eval_env, agent, spec, cfg, training_step=0)     # untrained agent
     info0.update({k: float("nan") for k in STAT_KEYS})
     history.append(info0)
     save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
@@ -116,8 +123,9 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
         expand_done(td)
 
         inf = td["next", "agents", "info"]
-        train_return = inf["native_rew"].sum(dim=1).mean().item()                   # native return, whatever the mode
-        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()      # the reward the agent trains on
+        per_ep = E / (E + td["next", "done"][:, :-1].sum().item())                  # per (partial) episode, as episodes can end early
+        train_return = inf["native_rew"].sum(dim=1).mean().item() * per_ep          # native return, whatever the mode
+        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item() * per_ep  # the reward the agent trains on
 
         assert torch.isfinite(td["next", "agents", "observation"]).all(), "NaN in obs"
         assert torch.isfinite(td["next", "agents", "reward"]).all(), "NaN in reward"
@@ -175,7 +183,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
         if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
 
             # Run evaluation episodes and store results
-            info = evaluate(eval_env, agent, spec, cfg, training_episode=(it + 1) * E)
+            info = evaluate(eval_env, agent, spec, cfg, training_step=(it + 1) * frames_per_batch)
             info.update(train_stats)
             history.append(info)
 
@@ -198,7 +206,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
             if cfg.EVAL_GIF:
                 save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
-        p_bar.update(n=E)
+        p_bar.update(n=frames_per_batch)
 
     collector.shutdown()
     p_bar.close()
@@ -210,7 +218,7 @@ if __name__ == "__main__":
     import time
     from environment.environment import make_env
 
-    spec, spec_desc = build_spec()
+    spec, spec_desc = build_spec("coen")
     cfg = Config(DEVICE="cuda", MAX_STEPS=150, NUM_ENVS=30, EPISODES=90, EVAL_EPISODES=10,
                  EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, MAPPO=True, DEPTH=2, ENTROPY_COEF=1e-4,
                  REWARD_MODE="mixed", RHO_COEF=1.0, RUN_ID=time.strftime("%Y%m%d_%H%M%S"))

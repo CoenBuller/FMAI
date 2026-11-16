@@ -18,6 +18,15 @@ class Config:
     RUN_ID: str = ""
     HORIZON: int = 1000
     EVAL_GIF: bool = False
+    STEPS: int = 0                                          # Training budget in env steps (frames). 0 -> EPISODES * MAX_STEPS
+    SPEC: str = "coen"                                      # Training spec (sfo.build_spec) for REWARD_MODE rho / mixed
+    EVAL_SPEC: str = "sfo"                                  # Eval robustness: "sfo" = spec-independent reference (GOAL_EPS, SAFETY_DIST), or a build_spec name
+    N_SEEDS: int = 1                                        # Seeds SEED .. SEED + N_SEEDS - 1 are run per option (experiment.py)
+    SMOOTH: int = 1                                         # Moving-average window (in eval points) for the compare plots; 1 = off
+    PLOT_MODE: str = "diagnostic"                           # "diagnostic": per-run 6-panel PNG only. "compare": also one overlay figure + table over all options/seeds
+    EARLY_STOP: bool = True                                 # End an episode once every agent is within GOAL_EPS of its goal
+    GOAL_EPS: float = 0.1                                   # Goal radius for early stopping and the reference robustness (mu1)
+    SAFETY_DIST: float = 0.3                                # Centre-to-centre safety distance for the reference robustness (mu2)
 
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "navigation"
@@ -43,7 +52,7 @@ class Config:
             "ReLU": ReLU,
             "Sigmoid": Sigmoid,
         }
-        return activations[self.ACTIVATION]    
+        return {k.lower(): v for k, v in activations.items()}[self.ACTIVATION.lower()]   # yaml has "ReLu"
 
     # PPO Loss
     CLIP_EPS: float = 0.2                                   # Clipping parameter for PPO loss
@@ -59,6 +68,8 @@ class Config:
     def __post_init__(self):
         if self.MAPPO:
             self.SHARED_REW = True    # MAPPO implies a team reward
+        if not self.STEPS:
+            self.STEPS = int(self.EPISODES * self.MAX_STEPS)   # old yaml files only give EPISODES
     #---------------------------------- Retrieving variables ----------------------------------#
     @property
     def variables(self):

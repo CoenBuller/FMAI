@@ -3,6 +3,11 @@ from fmai.robustness import Pred, Defined, And, Or, Not, WeightedRobustness
 
 TAU1, TAU2 = 1, 2
 
+# Lidar obs = 0.35 - distance from the agent's centre to the other agent's surface (agent radius 0.1), so
+# centre-to-centre distance = 0.45 - obs.
+DA = 0.15       # "well-spaced": centres > 0.30 apart (= Config.SAFETY_DIST)
+DAP = 0.25      # hard safety: centres > 0.20 apart, i.e. agents never touch (was 0.8, which can never be violated)
+
 def dgoal(obs):                      
     return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
 
@@ -42,15 +47,15 @@ def build_spec(spec_type):
         3. Hard safety (never critical distance): dap(t)
         """
         dg   = Pred(dgoal, "<=", 0.1)                        # At goal
-        da   = Pred(dlidar, "<", 0.2)                        # Well-spaced now
-        dap  = Pred(dlidar, "<", 0.8)                        # Never in critical distance
-        sda1 = Pred(shift_da(TAU1), "<", 0.2)                # Well-spaced TAU1 steps ago
+        da   = Pred(dlidar, "<", DA)                         # Well-spaced now
+        dap  = Pred(dlidar, "<", DAP)                        # Never in critical distance
+        sda1 = Pred(shift_da(TAU1), "<", DA)                 # Well-spaced TAU1 steps ago
 
         # Progress toward goal over [1, TAU1]
         vg = [Defined(Pred(vgoal(s), ">", 0.0)) for s in range(1, 1 + TAU1)]
 
         # Well-spaced in the past [1, TAU2] OR actively increasing separation over [1, TAU2]
-        past_da = [Defined(Pred(shift_da(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
+        past_da = [Defined(Pred(shift_da(s), "<", DA)) for s in range(1, 1 + TAU2)]
         va      = [Defined(Pred(vagent(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
 
         phi = And(

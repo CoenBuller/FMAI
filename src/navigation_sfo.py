@@ -2,7 +2,7 @@
 
 Changes to the original scenario, applied in both conditions:
   - agents and goals spawn at least `spawn_spacing` apart, so the separation spec is satisfiable,
-  - episodes never end early (only the time limit in train_old.py ends them),
+  - with early_stop, an episode ends once every agent is within eps of its goal (otherwise only the time limit ends it),
   - info reports the native reward, collisions, positions and the SFO terms, whatever reward is trained on.
 
 Per agent i the SFO spec is   F G (mu1_i >= 0)  and  G (mu2_i >= 0)   with
@@ -15,10 +15,11 @@ from vmas.scenarios.navigation import Scenario
 
 class NavigationSFO(Scenario):
     def make_world(self, batch_dim, device, *, reward, eps, safety_distance, spawn_spacing, lambda1, lambda2, mu2_cap,
-                   **kwargs):
+                   early_stop=False, **kwargs):
         world = super().make_world(batch_dim, device, **kwargs)
         self.reward_type, self.eps, self.d = reward, eps, safety_distance
         self.lambda1, self.lambda2, self.mu2_cap = lambda1, lambda2, mu2_cap
+        self.early_stop = early_stop
         self.min_distance_between_entities = spawn_spacing
         return world
 
@@ -39,6 +40,8 @@ class NavigationSFO(Scenario):
         return self.robust_rew
 
     def done(self):
+        if self.early_stop:                                     # terminate once every agent is within eps of its goal
+            return (self.sfo_terms()[0] >= 0).all(dim=-1)
         return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
 
     def info(self, agent):
