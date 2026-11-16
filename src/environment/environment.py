@@ -9,53 +9,7 @@ from navigation_sfo import NavigationSFO
 from vmas.scenarios.navigation import Scenario
 from vmas.simulator.core import Agent
 
-
-class Flocking(Scenario):
-    def make_world(
-        self, 
-        batch_dim: int, 
-        device: torch.device, 
-        **kwargs
-        ):  
-        self.shared_rew = kwargs.pop("shared_rew", False)
-        self.observe_peers =  kwargs.pop("observe_peers", False)
-        self.world = super().make_world(batch_dim, device, **kwargs)
-        self.device = device
-
-        for agent in world.policy_agents:
-            agent.sensors[0]._entity_filter = lambda e: e != self._target
-        
-        return self.world
-
-    def observation(self, agent: Agent):
-        """
-        Observation layout [E, D] per policy agent:
-          [0:2]   agent.state.pos                    (2)
-          [2:4]   agent.state.vel                    (2)
-          [4:6]   agent.state.pos - target.state.pos (2)
-          [6:18]  lidar (12 rays, max_range=0.2)     (n_lidar_rays)
-          [18:..] relative peer positions (optional) (2 * (n_agents - 1))
-        """
-        base_obs = super().observation(agent)  # [E, 6 + n_lidar_rays]
-        
-        if self.observe_peers:
-            rel_peers = [
-                a.state.pos - agent.state.pos
-                for a in self.world.policy_agents
-                if a != agent
-                ]
-            return torch.cat([base_obs, *rel_peers], dim=-1)
-
-        return base_obs
-
-    def reward(self, agent):
-        native = super().reward(agent)  
-        return native
-
-    def done(self):
-        return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
-
-
+from environment.Flocking ipmort flocking
 
 class RobustnessReward(Transform):
     """Adds the team robustness of `spec` to the reward at every step, computed on the GPU inside the env.
