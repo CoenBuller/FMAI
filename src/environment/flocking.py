@@ -24,11 +24,12 @@ class Scenario(BaseScenario):
         self.n_lidar_rays = kwargs.pop("n_lidar_rays", 12)
         self.lidar_max_range = kwargs.pop("lidar_max_range", 0.35)
 
-        # --- Reward Parameters ---
+        # --- Reward & Band Parameters ---
         # 1. Distance band around target: r_d(t) = epsilon_t - |r_i(t) - r_t|
         self.target_radius = kwargs.pop("target_radius", 0.3)          # r_t
         self.epsilon_t = kwargs.pop("epsilon_t", 0.05)                 # epsilon_t (band half-width & positive bonus)
         self.flat_band_bonus = kwargs.pop("flat_band_bonus", False)    # if True: +epsilon_t anywhere inside band
+        self.spawn_in_band = kwargs.pop("spawn_in_band", True)         # if True: spawn agents inside [r_t - eps, r_t + eps]
 
         # 2. Lidar proximity threshold p_t
         self.min_proximity = kwargs.pop("min_proximity", 0.15)         # p_t
@@ -43,8 +44,8 @@ class Scenario(BaseScenario):
         self.w_v_max = kwargs.pop("w_v_max", 1.0)
 
         # Wind parameters
-        self.wind_strength = kwargs.pop("wind_strength", 0.08)                  # Set to 0 if you want no wind
-        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)        # Set to 0 if you want no wind gusts
+        self.wind_strength = kwargs.pop("wind_strength", 0.08)
+        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)
         self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
         # Target movement parameters
@@ -55,6 +56,9 @@ class Scenario(BaseScenario):
         assert (
             self.lidar_max_range >= self.min_proximity
         ), "lidar_max_range must be >= min_proximity so Lidar can detect violations of p_t."
+        assert (
+            self.target_radius - self.epsilon_t > 0
+        ), "target_radius - epsilon_t must be > 0 for a valid inner band boundary."
 
         self.plot_grid = True
         self.x_dim = 1
@@ -114,11 +118,9 @@ class Scenario(BaseScenario):
 
     def get_wind_at(self, agent: Agent) -> Tensor:
         """Computes steady base wind + time/space-varying gusts for an agent."""
-
-        if self.wind_strength > 0:
-            base_wind = self.wind_strength * torch.cat(
-                [torch.cos(self.wind_angle), torch.sin(self.wind_angle)], dim=-1
-            )
+        base_wind = self.wind_strength * torch.cat(
+            [torch.cos(self.wind_angle), torch.sin(self.wind_angle)], dim=-1
+        )
         if self.wind_gust_strength > 0:
             t = self.t.unsqueeze(-1) / 20.0
             gust_x = torch.sin(t + agent.state.pos[:, X : X + 1] * 3.0)
@@ -132,6 +134,46 @@ class Scenario(BaseScenario):
         if agent is self._target:
             return
         agent.action.u = agent.action.u + self.get_wind_at(agent)
+
+    def _spawn_agents_in_band(self, target_pos: Tensor, env_index: int = None):
+        """Spawns policy agents inside [target_radius - epsilon_t, target_radius + epsilon_t] around target_pos."""
+        n_agents = len(self.world.policy_agents)
+        batch_size = 1 if env_index is not None else self.world.batch_dim
+        device = self.world.device
+
+        r_min = self.target_radius - self.epsilon_t
+        r_max = self.target_radius + self.epsilon_t
+
+        # Sample radii uniformly within the band for each env and agent
+        radii = r_min + (r_max - r_min) * torch.rand(
+            (batch_size, n_agents), device=device, dtype=torch.float32
+        )
+
+        # Evenly divide [0, 2*pi) into n_agents sectors + random global rotation & sector jitter
+        # so agents start inside the band without violating min_proximity
+        base_rotation = (
+            torch.rand((batch_size, 1), device=device, dtype=torch.float32) * 2 * torch.pi
+        )
+        sector_size = (2 * torch.pi) / max(n_agents, 1)
+        sector_offsets = (
+            torch.arange(n_agents, device=device, dtype=torch.float32).unsqueeze(0)
+            * sector_size
+        )
+        # Keep jitter within +/- 25% of sector width so neighbors remain well separated
+        jitter = (
+            (torch.rand((batch_size, n_agents), device=device, dtype=torch.float32) - 0.5)
+            * 0.5
+            * sector_size
+        )
+        angles = base_rotation + sector_offsets + jitter
+
+        offsets = torch.stack(
+            [radii * torch.cos(angles), radii * torch.sin(angles)], dim=-1
+        )  # shape: (batch_size, n_agents, 2)
+
+        for idx, agent in enumerate(self.world.policy_agents):
+            agent_pos = target_pos + offsets[:, idx, :]
+            agent.set_pos(agent_pos, batch_index=env_index)
 
     def reset_world_at(self, env_index: int = None):
         if env_index is None:
@@ -167,15 +209,18 @@ class Scenario(BaseScenario):
         target_pos[:, Y] = -self.y_dim * 0.5
         self._target.set_pos(target_pos, batch_index=env_index)
 
-        ScenarioUtils.spawn_entities_randomly(
-            self.world.policy_agents,
-            self.world,
-            env_index,
-            self._min_dist_between_entities,
-            x_bounds=(-self.x_dim, self.x_dim),
-            y_bounds=(-self.y_dim, self.y_dim),
-            occupied_positions=target_pos.unsqueeze(1),
-        )
+        if self.spawn_in_band:
+            self._spawn_agents_in_band(target_pos, env_index=env_index)
+        else:
+            ScenarioUtils.spawn_entities_randomly(
+                self.world.policy_agents,
+                self.world,
+                env_index,
+                self._min_dist_between_entities,
+                x_bounds=(-self.x_dim, self.x_dim),
+                y_bounds=(-self.y_dim, self.y_dim),
+                occupied_positions=target_pos.unsqueeze(1),
+            )
 
     def reward(self, agent: Agent):
         is_first = self.world.policy_agents.index(agent) == 0
