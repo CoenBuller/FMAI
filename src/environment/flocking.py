@@ -15,42 +15,52 @@ from vmas.simulator.sensors import Lidar
 from vmas.simulator.utils import Color, ScenarioUtils, X, Y
 
 
-class Flocking(BaseScenario):
+class Scenario(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         n_agents = kwargs.pop("n_agents", 4)
         self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.15)
 
-        # Lidar configuration
+        # Lidar configuration (make sure lidar_max_range >= min_proximity)
         self.n_lidar_rays = kwargs.pop("n_lidar_rays", 12)
         self.lidar_max_range = kwargs.pop("lidar_max_range", 0.35)
 
-        # Distance & Speed targets
-        self.desired_target_distance = kwargs.pop("desired_target_distance", 0.3)
-        self.taget_distance_band_width = kwargs.pop("target_distance_band_width", 0.05)
-        self.desired_speed = kwargs.pop("desired_speed", 0.25)
-        self.relative_speed_target = kwargs.pop("relative_speed_target", True)
+        # --- Reward Parameters ---
+        # 1. Distance band around target: r_d(t) = epsilon_t - |r_i(t) - r_t|
+        self.target_radius = kwargs.pop("target_radius", 0.3)          # r_t
+        self.epsilon_t = kwargs.pop("epsilon_t", 0.05)                 # epsilon_t (band half-width & positive bonus)
+        self.flat_band_bonus = kwargs.pop("flat_band_bonus", False)    # if True: +epsilon_t anywhere inside band
 
-        # Reward weights
-        self.collision_reward = kwargs.pop("collision_reward", -0.1)
-        self.dist_shaping_factor = kwargs.pop("dist_shaping_factor", 1.0)
-        self.speed_shaping_factor = kwargs.pop("speed_shaping_factor", 0.5)
+        # 2. Lidar proximity threshold p_t
+        self.min_proximity = kwargs.pop("min_proximity", 0.15)         # p_t
+
+        # 3. Velocity limit v_max: r_v^max(t) = v_max - ||v_a(t)||
+        self.v_max = kwargs.pop("v_max", 0.5)                          # v_max
+
+        # Reward weights (all 1.0 by default: R(t) = r_v_rel + r_v_max + r_p + r_d)
+        self.w_dist = kwargs.pop("w_dist", 1.0)
+        self.w_prox = kwargs.pop("w_prox", 1.0)
+        self.w_v_rel = kwargs.pop("w_v_rel", 1.0)
+        self.w_v_max = kwargs.pop("w_v_max", 1.0)
 
         # Wind parameters
-        self.wind_strength = kwargs.pop("wind_strength", 0.08)                          # Set to 0 for no wind
-        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)                # Set to 0 for no wind gusts       
-        self.random_wind_direction = kwargs.pop("random_wind_direction", True)    
+        self.wind_strength = kwargs.pop("wind_strength", 0.08)                  # Set to 0 if you want no wind
+        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)        # Set to 0 if you want no wind gusts
+        self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
         # Target movement parameters
         self.target_speed_action = kwargs.pop("target_speed_action", 0.5)
 
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
+        assert (
+            self.lidar_max_range >= self.min_proximity
+        ), "lidar_max_range must be >= min_proximity so Lidar can detect violations of p_t."
+
         self.plot_grid = True
-        self.min_collision_distance = 0.005
         self.x_dim = 1
         self.y_dim = 1
 
-        # Wind state: base wind angle per environment in the batch
+        # Base wind angle per environment in the batch
         self.wind_angle = torch.zeros((batch_dim, 1), device=device, dtype=torch.float32)
 
         # Make world (no obstacles)
@@ -66,8 +76,7 @@ class Flocking(BaseScenario):
         )
         world.add_agent(self._target)
 
-        # IMPORTANT FIX: Detect other Agents with Lidar (original had `not isinstance(e, Agent)`)
-        # VMAS Lidar automatically ignores the sensing agent itself.
+        # Lidar detects other Agents (VMAS Lidar automatically ignores self)
         agent_entity_filter: Callable[[Entity], bool] = lambda e: isinstance(e, Agent)
 
         for i in range(n_agents):
@@ -84,10 +93,10 @@ class Flocking(BaseScenario):
                 ],
                 render_action=True,
             )
-            agent.collision_rew = torch.zeros(batch_dim, device=device)
-            agent.dist_rew = torch.zeros(batch_dim, device=device)
-            agent.speed_rew = torch.zeros(batch_dim, device=device)
-            agent.distance_shaping = torch.zeros(batch_dim, device=device)
+            agent.r_d = torch.zeros(batch_dim, device=device)
+            agent.r_p = torch.zeros(batch_dim, device=device)
+            agent.r_v_rel = torch.zeros(batch_dim, device=device)
+            agent.r_v_max = torch.zeros(batch_dim, device=device)
 
             world.add_agent(agent)
 
@@ -105,14 +114,13 @@ class Flocking(BaseScenario):
 
     def get_wind_at(self, agent: Agent) -> Tensor:
         """Computes steady base wind + time/space-varying gusts for an agent."""
+
         if self.wind_strength > 0:
             base_wind = self.wind_strength * torch.cat(
                 [torch.cos(self.wind_angle), torch.sin(self.wind_angle)], dim=-1
             )
-
         if self.wind_gust_strength > 0:
             t = self.t.unsqueeze(-1) / 20.0
-            # Spatially and temporally varying sinusoidal gusts
             gust_x = torch.sin(t + agent.state.pos[:, X : X + 1] * 3.0)
             gust_y = torch.cos(t + agent.state.pos[:, Y : Y + 1] * 3.0)
             gust = self.wind_gust_strength * torch.cat([gust_x, gust_y], dim=-1)
@@ -120,29 +128,10 @@ class Flocking(BaseScenario):
         return base_wind
 
     def process_action(self, agent: Agent):
-        """Hook called by VMAS before stepping physics. Adds wind force to policy agents."""
+        """Adds wind force to policy agents before physics stepping."""
         if agent is self._target:
             return
-        wind_force = self.get_wind_at(agent)
-        agent.action.u = agent.action.u + wind_force
-
-    def _compute_distance_shaping(self, agent: Agent, env_index: int = None) -> Tensor:
-        """Computes L1 norm between desired distance and agents position."""
-        if env_index is None:
-            # 1. Distance to the moving target vs. desired_target_distance
-            dist_to_target = torch.linalg.vector_norm(
-                agent.state.pos - self._target.state.pos, dim=-1
-            )
-            target_shaping = self.target_distance_band_width - torch.abs((dist_to_target - self.desired_target_distance))
-            
-            return target_shaping * self.dist_shaping_factor
-        else:
-            dist_to_target = torch.linalg.vector_norm(
-                agent.state.pos[env_index] - self._target.state.pos[env_index]
-            )
-            target_shaping = self.target_distance_band_width - torch.abs((dist_to_target - self.desired_target_distance))
-
-            return target_shaping * self.dist_shaping_factor
+        agent.action.u = agent.action.u + self.get_wind_at(agent)
 
     def reset_world_at(self, env_index: int = None):
         if env_index is None:
@@ -178,7 +167,6 @@ class Flocking(BaseScenario):
         target_pos[:, Y] = -self.y_dim * 0.5
         self._target.set_pos(target_pos, batch_index=env_index)
 
-        # Spawn only policy agents (obstacles removed)
         ScenarioUtils.spawn_entities_randomly(
             self.world.policy_agents,
             self.world,
@@ -189,75 +177,66 @@ class Flocking(BaseScenario):
             occupied_positions=target_pos.unsqueeze(1),
         )
 
-        for agent in self.world.policy_agents:
-            if env_index is None:
-                agent.distance_shaping = self._compute_distance_shaping(
-                    agent, env_index=None
-                )
-            else:
-                agent.distance_shaping[env_index] = self._compute_distance_shaping(
-                    agent, env_index=env_index
-                )
-
     def reward(self, agent: Agent):
         is_first = self.world.policy_agents.index(agent) == 0
-
         if is_first:
             self.t += 1
 
-            # Avoid collisions with each other and the target
-            if self.collision_reward != 0:
-                for a in self.world.policy_agents:
-                    a.collision_rew[:] = 0
-
-                for i, a in enumerate(self.world.agents):
-                    for j, b in enumerate(self.world.agents):
-                        if j <= i:
-                            continue
-                        collision = (
-                            self.world.get_distance(a, b) <= self.min_collision_distance
-                        )
-                        if a.action_script is None:
-                            a.collision_rew[collision] += self.collision_reward
-                        if b.action_script is None:
-                            b.collision_rew[collision] += self.collision_reward
-
-        # 1. Distance shaping reward (orbit radius around target + inter-agent spacing)
-        current_dist_shaping = self._compute_distance_shaping(agent, env_index=None)
-        agent.dist_rew = agent.distance_shaping - current_dist_shaping
-        agent.distance_shaping = current_dist_shaping
-
-        # 2. Specific speed reward (penalize deviation from desired_speed)
-        vel = (
-            agent.state.vel - self._target.state.vel
-            if self.relative_speed_target
-            else agent.state.vel
+        # 1. Distance reward r_d(t) with band margin epsilon_t
+        #    Positive inside [r_t - epsilon_t, r_t + epsilon_t], negative outside
+        r_i = torch.linalg.vector_norm(
+            agent.state.pos - self._target.state.pos, dim=-1
         )
-        current_speed = torch.linalg.vector_norm(vel, dim=-1)
-        agent.speed_rew = (
-            -(current_speed - self.desired_speed).abs() * self.speed_shaping_factor
-        )
+        radial_error = (r_i - self.target_radius).abs()
+        if self.flat_band_bonus:
+            in_band = radial_error <= self.epsilon_t
+            agent.r_d = torch.where(
+                in_band,
+                torch.full_like(r_i, self.epsilon_t),
+                self.epsilon_t - radial_error,
+            ) * self.w_dist
+        else:
+            agent.r_d = (self.epsilon_t - radial_error) * self.w_dist
 
-        return agent.collision_rew + agent.dist_rew + agent.speed_rew
+        # 2. Lidar-based proximity penalty r_p(t)
+        #    Lidar rays return distance in [0, lidar_max_range] (lidar_max_range when nothing hit)
+        lidar_readings = agent.sensors[0].measure()
+        min_lidar_dist, _ = torch.min(lidar_readings, dim=-1)  # p_a(t)
+        # Negative penalty when closer than min_proximity (p_t), 0 otherwise
+        agent.r_p = torch.clamp(min_lidar_dist - self.min_proximity, max=0.0) * self.w_prox
+
+        # 3. Relative Velocity Reward r_v^rel(t) = ||v_a(t) - v_t(t)||
+        rel_vel_norm = torch.linalg.vector_norm(
+            agent.state.vel - self._target.state.vel, dim=-1
+        )
+        agent.r_v_rel = rel_vel_norm * self.w_v_rel
+
+        # 4. Max Velocity Reward r_v^max(t) = v_max - ||v_a(t)||
+        abs_vel_norm = torch.linalg.vector_norm(agent.state.vel, dim=-1)
+        agent.r_v_max = (self.v_max - abs_vel_norm) * self.w_v_max
+
+        # Total Reward: R(t) = r_v^rel(t) + r_v^max(t) + r_p(t) + r_d(t)
+        return agent.r_v_rel + agent.r_v_max + agent.r_p + agent.r_d
 
     def observation(self, agent: Agent):
         return torch.cat(
             [
-                agent.state.pos,                               # [0:2]: global position of agent
-                agent.state.vel,                               # [2:4]: global velocity of agent
-                agent.state.pos - self._target.state.pos,      # [4:6]: agents relative position to target
-                agent.state.vel - self._target.state.vel,      # [6:8]: agents relative velocity to target
-                self.get_wind_at(agent),                       # [8:10]: the wind strength in x,y direction for agent 
-                agent.sensors[0].measure(),                    # [10:10+n_lidar_rays]: agents lidar readings (proximity)
+                agent.state.pos,                          # [0:2]
+                agent.state.vel,                          # [2:4]
+                agent.state.pos - self._target.state.pos, # [4:6]
+                agent.state.vel - self._target.state.vel, # [6:8]
+                self.get_wind_at(agent),                  # [8:10]
+                agent.sensors[0].measure(),               # [10:10+n_lidar_rays]
             ],
             dim=-1,
         )
 
     def info(self, agent: Agent) -> Dict[str, Tensor]:
         return {
-            "agent_collision_rew": agent.collision_rew,
-            "agent_distance_rew": agent.dist_rew,
-            "agent_speed_rew": agent.speed_rew,
+            "r_d": agent.r_d,
+            "r_p": agent.r_p,
+            "r_v_rel": agent.r_v_rel,
+            "r_v_max": agent.r_v_max,
         }
 
 
@@ -270,14 +249,12 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         wind = observation[:, 8:10]
         lidar = observation[:, 10:22]
 
-        # Orbit around the moving target's actual position at radius 0.3
         circle_origin = current_pos - rel_pos_to_target
         circle_radius = 0.3
         v = rel_pos_to_target
         v_norm = torch.linalg.norm(v, dim=1, keepdim=True).clamp(min=1e-6)
         closest_point_on_circ = circle_origin + (v / v_norm) * circle_radius
 
-        # Tangent vector for circular motion around the target
         radial_from_origin = closest_point_on_circ - circle_origin
         closest_point_on_circ_normal = torch.stack(
             [radial_from_origin[:, Y], -radial_from_origin[:, X]], dim=1
@@ -288,7 +265,6 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         closest_point_on_circ_normal = (closest_point_on_circ_normal / normal_norm) * 0.1
         des_pos = closest_point_on_circ + closest_point_on_circ_normal
 
-        # Move away from other agents within Lidar visibility range
         object_visible = torch.any(lidar < 0.15, dim=1)
         _, object_dir_index = torch.min(lidar, dim=1)
         object_dir = object_dir_index / lidar.shape[1] * 2 * torch.pi
@@ -296,7 +272,6 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         des_pos_object = current_pos - object_vec * 0.15
         des_pos[object_visible] = des_pos_object[object_visible]
 
-        # Counteract local wind while tracking desired position
         action = torch.clamp(
             (des_pos - current_pos) * 10 - wind,
             min=-u_range,
