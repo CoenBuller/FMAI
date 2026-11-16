@@ -26,7 +26,7 @@ class Config:
     MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
     CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
     SHARED_REW: bool = False                                # Added flag for shared/common reward
-
+    OBSERVE_PEERS: bool = False
     
     #---------------------------------- Agent Config ----------------------------------#
     

@@ -6,6 +6,56 @@ from torchrl.envs.transforms import Transform
 
 from navigation_sfo import NavigationSFO
 
+from vmas.scenarios.navigation import Scenario
+from vmas.simulator.core import Agent
+
+
+class Flocking(Scenario):
+    def make_world(
+        self, 
+        batch_dim: int, 
+        device: torch.device, 
+        **kwargs
+        ):  
+        self.shared_rew = kwargs.pop("shared_rew", False)
+        self.observe_peers =  kwargs.pop("observe_peers", False)
+        self.world = super().make_world(batch_dim, device, **kwargs)
+        self.device = device
+
+        for agent in world.policy_agents:
+            agent.sensors[0]._entity_filter = lambda e: e != self._target
+        
+        return self.world
+
+    def observation(self, agent: Agent):
+        """
+        Observation layout [E, D] per policy agent:
+          [0:2]   agent.state.pos                    (2)
+          [2:4]   agent.state.vel                    (2)
+          [4:6]   agent.state.pos - target.state.pos (2)
+          [6:18]  lidar (12 rays, max_range=0.2)     (n_lidar_rays)
+          [18:..] relative peer positions (optional) (2 * (n_agents - 1))
+        """
+        base_obs = super().observation(agent)  # [E, 6 + n_lidar_rays]
+        
+        if self.observe_peers:
+            rel_peers = [
+                a.state.pos - agent.state.pos
+                for a in self.world.policy_agents
+                if a != agent
+                ]
+            return torch.cat([base_obs, *rel_peers], dim=-1)
+
+        return base_obs
+
+    def reward(self, agent):
+        native = super().reward(agent)  
+        return native
+
+    def done(self):
+        return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
+
+
 
 class RobustnessReward(Transform):
     """Adds the team robustness of `spec` to the reward at every step, computed on the GPU inside the env.
@@ -16,7 +66,10 @@ class RobustnessReward(Transform):
 
     def __init__(self, spec, window, mode, coef, shared_rew=False):
         super().__init__(in_keys=[], out_keys=[])
-        self.spec, self.window, self.mode, self.coef = spec, window, mode, coef
+        self.spec = spec
+        self.window = window
+        self.mode = mode
+        self.coef = coef
         self.hist = None                                             # [E, window+1, A, D]
         self.shared_rew = shared_rew
 
@@ -51,25 +104,49 @@ class RobustnessReward(Transform):
         return next_tensordict
 
 
-def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
+def make_env(
+    cfg,
+    num_envs, 
+    seed, 
+    spec=None, 
+    mode="none", 
+    window=5
+    ):
+
     """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
-    env = VmasEnv(
-        scenario=NavigationSFO(),
-        num_envs=num_envs,
-        continuous_actions=cfg.CONTINUOUS_ACTIONS,
-        device=cfg.DEVICE,
-        seed=seed,
-        n_agents=cfg.NUM_AGENTS,
-        shared_rew=cfg.SHARED_REW,
-        reward="native",
-        eps=0.1,
-        safety_distance=0.3,
-        spawn_spacing=0.4,
-        lambda1=1.0,
-        lambda2=1 / 0.3,
-        mu2_cap=0.2,
-    )
+
+    if cfg["SCENARIO"] == "navigation":
+        env = VmasEnv(
+            scenario=NavigationSFO(),
+            num_envs=num_envs,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
+            device=cfg.DEVICE,
+            seed=seed,
+            n_agents=cfg.NUM_AGENTS,
+            shared_rew=cfg.SHARED_REW,
+            reward="native",
+            eps=0.1,
+            safety_distance=0.3,
+            spawn_spacing=0.4,
+            lambda1=1.0,
+            lambda2=1 / 0.3,
+            mu2_cap=0.2,
+        )
+
+    elif cfg["SCENARIO"] == "flocking":
+        env = VmasEnv(
+            scenario=Flocking(),
+            num_envs=num_envs,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
+            device=cfg.DEVICE,
+            seed=seed,
+            n_agents=cfg.NUM_AGENTS,
+            shared_rew=cfg.SHARED_REW,
+            observe_peers=cfg.OBSERVE_PEERS
+
+        )
+        
     transforms = [StepCounter(max_steps=cfg.MAX_STEPS)]              # time limit = truncation
     if spec is not None and mode in ("rho", "mixed"):
         rho_rew = RobustnessReward(

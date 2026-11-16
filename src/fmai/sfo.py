@@ -24,18 +24,18 @@ def vgoal(s):
     """Goal progress: dgoal(t-s) - dgoal(t) > 0 (distance to goal is decreasing)"""
     return lambda o: lag(dgoal(o), s, o[..., 0, -1]) - dgoal(o)
 
-def shift_da(s):
+def shift_dlidar(s):
     """dlidar(t-s): LiDAR reading shifted back by s steps"""
     return lambda o: lag(dlidar(o), s, o[..., 0, -1])
 
-def vagent(s):
+def vlidar(s):
     """Separation progress: dlidar(t-s) - dlidar(t) > 0 (LiDAR proximity is decreasing)"""
     return lambda o: lag(dlidar(o), s, o[..., 0, -1]) - dlidar(o)
 
 
-def build_spec():
+def build_nav_spec():
     """
-    CNF Specification:
+    CNF Specification for navigation environment:
     1. Goal progress when safely spaced: ~da(t-TAU1) | ~da(t) | dg(t) | vg(1..TAU1)
     2. Spacing recovery or active avoidance: da(t) | da(t-1..t-TAU2) | va(1..TAU2)
     3. Hard safety (never critical distance): dap(t)
@@ -43,14 +43,14 @@ def build_spec():
     dg   = Pred(dgoal, "<=", 0.1)                        # At goal
     da   = Pred(dlidar, "<", 0.2)                        # Well-spaced now
     dap  = Pred(dlidar, "<", 0.8)                        # Never in critical distance
-    sda1 = Pred(shift_da(TAU1), "<", 0.2)                # Well-spaced TAU1 steps ago
+    sda1 = Pred(shift_dlidar(TAU1), "<", 0.2)                # Well-spaced TAU1 steps ago
 
     # Progress toward goal over [1, TAU1]
     vg = [Defined(Pred(vgoal(s), ">", 0.0)) for s in range(1, 1 + TAU1)]
 
     # Well-spaced in the past [1, TAU2] OR actively increasing separation over [1, TAU2]
-    past_da = [Defined(Pred(shift_da(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
-    va      = [Defined(Pred(vagent(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
+    past_da = [Defined(Pred(shift_dlidar(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
+    va      = [Defined(Pred(vlidar(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
 
     phi = And(
         Or(Defined(Not(sda1)), Not(da), dg, *vg),
@@ -64,3 +64,6 @@ def build_spec():
         r"\wedge d_a^{+}(t)$"
     ]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
+
+def build_floc_spec():
+    ...

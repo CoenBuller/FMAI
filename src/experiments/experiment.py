@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from environment.environment import make_env
 from fmai.train import train
 from fmai.agents import Agent
-from fmai.sfo import build_spec, TAU2, TAU1
+from fmai.sfo import build_nav_spec, build_floc_spec, TAU2, TAU1
 from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
@@ -32,6 +32,7 @@ def parse_args():
         required=True,
         help="Path to experiment .yaml config",
     )
+    parser.add_argument("--scenario", type=str, default="navigation")
     parser.add_argument("--n_agents", type=int, default=None)
     parser.add_argument("--mappo", type=str_to_bool, default=None)
     parser.add_argument("--shared_reward", type=str_to_bool, default=None)
@@ -78,7 +79,12 @@ def run_all(
     run_id = time.strftime("%Y%m%d_%H%M%S")
     overwrites = cli_overrides(args=args)
 
-    spec, spec_desc = build_spec()
+    spec_builder = {
+        'navigation': build_nav_spec
+        'flocking': ...
+        }
+
+    spec, spec_desc = spec_builder.get(args.scenario, build_nav_spec)()
 
     for mode in e["modes"]:
         merged_cfg = {**e["config"], **overwrites, "REWARD_MODE": mode, "RUN_ID": run_id}
