@@ -34,8 +34,11 @@ class Scenario(BaseScenario):
         # 2. Lidar proximity threshold p_t
         self.min_proximity = kwargs.pop("min_proximity", 0.15)         # p_t
 
-        # 3. Velocity limit v_max: r_v^max(t) = v_max - ||v_a(t)||
-        self.v_max = kwargs.pop("v_max", 0.5)                          # v_max
+        # 3. Steady relative velocity & max velocity limit
+        #    r_v^rel(t) = epsilon_v - | ||v_a(t) - v_t(t)|| - target_rel_speed |
+        self.target_rel_speed = kwargs.pop("target_rel_speed", 0.25)   # desired steady relative speed
+        self.epsilon_v = kwargs.pop("epsilon_v", 0.05)                 # tolerance band around target_rel_speed
+        self.v_max = kwargs.pop("v_max", 0.5)                          # r_v^max(t) = v_max - ||v_a(t)||
 
         # Reward weights (all 1.0 by default: R(t) = r_v_rel + r_v_max + r_p + r_d)
         self.w_dist = kwargs.pop("w_dist", 1.0)
@@ -144,13 +147,10 @@ class Scenario(BaseScenario):
         r_min = self.target_radius - self.epsilon_t
         r_max = self.target_radius + self.epsilon_t
 
-        # Sample radii uniformly within the band for each env and agent
         radii = r_min + (r_max - r_min) * torch.rand(
             (batch_size, n_agents), device=device, dtype=torch.float32
         )
 
-        # Evenly divide [0, 2*pi) into n_agents sectors + random global rotation & sector jitter
-        # so agents start inside the band without violating min_proximity
         base_rotation = (
             torch.rand((batch_size, 1), device=device, dtype=torch.float32) * 2 * torch.pi
         )
@@ -159,7 +159,6 @@ class Scenario(BaseScenario):
             torch.arange(n_agents, device=device, dtype=torch.float32).unsqueeze(0)
             * sector_size
         )
-        # Keep jitter within +/- 25% of sector width so neighbors remain well separated
         jitter = (
             (torch.rand((batch_size, n_agents), device=device, dtype=torch.float32) - 0.5)
             * 0.5
@@ -169,7 +168,7 @@ class Scenario(BaseScenario):
 
         offsets = torch.stack(
             [radii * torch.cos(angles), radii * torch.sin(angles)], dim=-1
-        )  # shape: (batch_size, n_agents, 2)
+        )
 
         for idx, agent in enumerate(self.world.policy_agents):
             agent_pos = target_pos + offsets[:, idx, :]
@@ -244,17 +243,16 @@ class Scenario(BaseScenario):
             agent.r_d = (self.epsilon_t - radial_error) * self.w_dist
 
         # 2. Lidar-based proximity penalty r_p(t)
-        #    Lidar rays return distance in [0, lidar_max_range] (lidar_max_range when nothing hit)
         lidar_readings = agent.sensors[0].measure()
         min_lidar_dist, _ = torch.min(lidar_readings, dim=-1)  # p_a(t)
-        # Negative penalty when closer than min_proximity (p_t), 0 otherwise
         agent.r_p = torch.clamp(min_lidar_dist - self.min_proximity, max=0.0) * self.w_prox
 
-        # 3. Relative Velocity Reward r_v^rel(t) = ||v_a(t) - v_t(t)||
+        # 3. Steady Relative Velocity Reward r_v^rel(t) = epsilon_v - | ||v_a(t) - v_t(t)|| - target_rel_speed |
         rel_vel_norm = torch.linalg.vector_norm(
             agent.state.vel - self._target.state.vel, dim=-1
         )
-        agent.r_v_rel = rel_vel_norm * self.w_v_rel
+        rel_vel_error = (rel_vel_norm - self.target_rel_speed).abs()
+        agent.r_v_rel = (self.epsilon_v - rel_vel_error) * self.w_v_rel
 
         # 4. Max Velocity Reward r_v^max(t) = v_max - ||v_a(t)||
         abs_vel_norm = torch.linalg.vector_norm(agent.state.vel, dim=-1)
