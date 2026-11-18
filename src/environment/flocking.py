@@ -108,6 +108,7 @@ class StableFlocking(BaseScenario):
             agent.r_p = torch.zeros(batch_dim, device=device)
             agent.r_v_rel = torch.zeros(batch_dim, device=device)
             agent.r_v_max = torch.zeros(batch_dim, device=device)
+            agent.native_rew = torch.zeros(batch_dim, device=device)
 
             world.add_agent(agent)
 
