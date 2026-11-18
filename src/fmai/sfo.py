@@ -34,7 +34,7 @@ def vlidar(s):
     """Separation progress: dlidar(t-s) - dlidar(t) > 0 (LiDAR proximity is decreasing)"""
     return lambda o: lag(dlidar(o), s, o[..., 0, -1]) - dlidar(o)
 
-# --- Flocking signals (requires obs layout: [pos(0:2), vel(2:4), rel_pos(4:6), lidar(6:18), rel_vel(18:20), wind(20:22), ep_id(-1)]) ---
+# --- Flocking signals (requires obs layout: [pos(0:2), vel(2:4), rel_pos(4:6), lidar(6:18), rel_vel(18:20), ep_id(-1)]) ---
 def vabs(obs):
     """Absolute agent speed: ||v_a(t)||"""
     return torch.linalg.vector_norm(obs[..., 2:4], dim=-1)
@@ -47,12 +47,18 @@ def shift_dband_err(s, r_t=0.3):
     """dband_err(t - s) shifted back by s steps"""
     return lambda o: lag(dband_err(o, r_t), s, o[..., 0, -1])
 
-def vrel_err(obs, v_r=0.2):
-    """Relative speed error: | ||v_a(t) - v_t(t)|| - v_r |"""
-    rel_speed = torch.linalg.vector_norm(obs[..., 18:20], dim=-1)
-    return (rel_speed - v_r).abs()
+def vtan(obs):
+    """Tangential orbital speed around the moving target: |r(t) x v_rel(t)| / ||r(t)||"""
+    rel_pos = obs[..., 4:6]
+    rel_vel = obs[..., 18:20]
+    dist = torch.linalg.vector_norm(rel_pos, dim=-1).clamp(min=1e-6)
+    return (rel_pos[..., 0] * rel_vel[..., 1] - rel_pos[..., 1] * rel_vel[..., 0]).abs() / dist
 
-def shift_vrel_err(s, v_r=0.2):
+def vrel_err(obs, v_r=0.20):
+    """Tangential speed error: | v_tan(t) - v_r |"""
+    return (vtan(obs) - v_r).abs()
+
+def shift_vrel_err(s, v_r=0.20):
     """vrel_err(t - s) shifted back by s steps"""
     return lambda o: lag(vrel_err(o, v_r), s, o[..., 0, -1])
 
@@ -65,8 +71,8 @@ def build_nav_spec():
     3. Hard safety (never critical distance): dap(t)
     """
     dg   = Pred(dgoal, "<=", 0.1)                        # At goal
-    da   = Pred(dlidar, ">", 0.2)                        # Well-spaced now
-    dap  = Pred(dlidar, ">", 0.8)                        # Never in critical distance
+    da   = Pred(dlidar, "<", 0.2)                        # Well-spaced now
+    dap  = Pred(dlidar, "<", 0.8)                        # Never in critical distance
     sda1 = Pred(shift_dlidar(TAU1), "<", 0.2)            # Well-spaced TAU1 steps ago
 
     # Progress toward goal over [1, TAU1]
@@ -97,15 +103,15 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     1. Strict collision avoidance invariant: phi_c(t) = (dlidar(t) < p_t)
     2. Strict maximum velocity invariant:    phi_v^m(t) = (||v_a(t)|| < v_max)
     3. Bounded-time orbital band recovery:   phi_s^d(t) = Or_{i=0..tau} (|r_i(t-i) - r_t| <= eps_T)
-    4. Bounded-time relative speed recovery: phi_s^v(t) = Or_{i=0..tau} (| ||v_a(t-i) - v_t(t-i)|| - v_r | <= eps_v)
+    4. Bounded-time tangential speed bound:  phi_s^v(t) = Or_{i=0..tau} (|v_tan(t-i) - v_r| <= eps_v)
     """
-    tau = cfg.TAU_FLOCK if cfg is not None else tau
-    r_t   = cfg.TARGET_RADIUS if cfg is not None else 0.3
+    tau   = cfg.TAU_FLOCK if cfg is not None else tau
+    r_t   = cfg.TARGET_RADIUS if cfg is not None else 0.30
     eps_t = cfg.EPSILON_T if cfg is not None else 0.05
     p_t   = cfg.MIN_PROXIMITY if cfg is not None else 0.45
-    v_r   = cfg.TARGET_REL_SPEED if cfg is not None else 0.2
+    v_r   = cfg.TARGET_REL_SPEED if cfg is not None else 0.20
     eps_v = cfg.EPSILON_V if cfg is not None else 0.05
-    v_max = cfg.V_MAX if cfg is not None else 0.75
+    v_max = cfg.V_MAX if cfg is not None else 0.60
 
     # 1. Strict invariants: phi_c(t) and phi_v^m(t)
     phi_c   = Pred(dlidar, "<", p_t)
@@ -119,7 +125,7 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     ]
     phi_s_d = Or(*phi_d_lags)
 
-    # 3. Bounded-time recovery for relative velocity band: phi_s^v(t) = \bigvee_{i=0}^{\tau} phi_v^a(t-i)
+    # 3. Bounded-time recovery for tangential velocity band: phi_s^v(t) = \bigvee_{i=0}^{\tau} phi_v^a(t-i)
     phi_v_lags = [
         Pred(lambda o: vrel_err(o, v_r), "<=", eps_v) if i == 0
         else Defined(Pred(shift_vrel_err(i, v_r), "<=", eps_v))
@@ -127,7 +133,7 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     ]
     phi_s_v = Or(*phi_v_lags)
 
-    # Complete formula: phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t) 
+    # Complete formula: phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t)
     phi_flock = And(phi_c, phi_v_m, phi_s_d, phi_s_v)
 
     desc = [

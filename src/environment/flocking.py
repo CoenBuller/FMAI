@@ -17,14 +17,12 @@ from vmas.simulator.utils import Color, ScenarioUtils, X, Y
 
 class StableFlocking(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-
-        
         n_agents = kwargs.pop("n_agents", 4)
         self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.15)
 
-        # Lidar configuration (make sure lidar_max_range >= min_proximity)
+        # Lidar configuration
         self.n_lidar_rays = kwargs.pop("n_lidar_rays", 12)
-        self.observe_peers = kwargs.pop("observe_peers", False)
+        self.observe_peers = kwargs.pop("observe_peers", True)
         self.lidar_max_range = kwargs.pop("lidar_max_range", 0.35)
 
         # --- Reward & Band Parameters ---
@@ -35,13 +33,13 @@ class StableFlocking(BaseScenario):
         self.spawn_in_band = kwargs.pop("spawn_in_band", True)         # if True: spawn agents inside [r_t - eps, r_t + eps]
 
         # 2. Lidar proximity threshold p_t
-        self.min_proximity = kwargs.pop("min_proximity", 0.15)         # p_t
+        self.min_proximity = kwargs.pop("min_proximity", 0.45)         # p_t
 
-        # 3. Steady relative velocity & max velocity limit
-        #    r_v^rel(t) = epsilon_v - | ||v_a(t) - v_t(t)|| - target_rel_speed |
-        self.target_rel_speed = kwargs.pop("target_rel_speed", 0.25)   # desired steady relative speed
+        # 3. Tangential orbital speed & max velocity limit
+        #    r_v^rel(t) = epsilon_v - | v_tan(t) - target_rel_speed |
+        self.target_rel_speed = kwargs.pop("target_rel_speed", 0.20)   # v_r: desired tangential orbital speed
         self.epsilon_v = kwargs.pop("epsilon_v", 0.05)                 # tolerance band around target_rel_speed
-        self.v_max = kwargs.pop("v_max", 0.5)                          # r_v^max(t) = v_max - ||v_a(t)||
+        self.v_max = kwargs.pop("v_max", 0.60)                         # r_v^max(t) = v_max - ||v_a(t)||
 
         # Reward weights (all 1.0 by default: R(t) = r_v_rel + r_v_max + r_p + r_d)
         self.w_dist = kwargs.pop("w_dist", 1.0)
@@ -54,10 +52,10 @@ class StableFlocking(BaseScenario):
         self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)
         self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
-        # Target smooth random-walk parameters        
-        self.target_speed_action = kwargs.pop("target_speed_action", 0.5)
-        self.target_turn_rate = kwargs.pop("target_turn_rate", 0.15)
-        self.target_boundary_margin = kwargs.pop("target_boundary_margin", 0.7)
+        # Target smooth random-walk parameters
+        self.target_speed_action = kwargs.pop("target_speed_action", 0.30)
+        self.target_turn_rate = kwargs.pop("target_turn_rate", 0.12)
+        self.target_boundary_margin = kwargs.pop("target_boundary_margin", 0.70)
 
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
@@ -141,7 +139,6 @@ class StableFlocking(BaseScenario):
 
             u = thrust + boundary_pull
             norm = torch.linalg.vector_norm(u, dim=-1, keepdim=True).clamp(min=1e-6)
-            # Keep magnitude bounded by target_speed_action and align heading when pulled back
             u = torch.where(
                 norm > self.target_speed_action,
                 u / norm * self.target_speed_action,
@@ -151,7 +148,6 @@ class StableFlocking(BaseScenario):
 
             # Sync target_heading with actual thrust direction so turns near boundaries stay smooth
             self.target_heading = torch.atan2(u[:, 1:2], u[:, 0:1])
-            
 
         return action_script
 
@@ -282,9 +278,8 @@ class StableFlocking(BaseScenario):
             self.t += 1
 
         # 1. Distance reward r_d(t) with band margin epsilon_t
-        r_i = torch.linalg.vector_norm(
-            agent.state.pos - self._target.state.pos, dim=-1
-        )
+        rel_pos = agent.state.pos - self._target.state.pos
+        r_i = torch.linalg.vector_norm(rel_pos, dim=-1)
         radial_error = (r_i - self.target_radius).abs()
         if self.flat_band_bonus:
             in_band = radial_error <= self.epsilon_t
@@ -297,19 +292,18 @@ class StableFlocking(BaseScenario):
             agent.r_d = (self.epsilon_t - radial_error) * self.w_dist
 
         # 2. Lidar-based proximity penalty r_p(t) = p_t - p_a(t)
-        #    p_a(t) is the max proximity reading in [0, 1].
-        #    Note: min_proximity (p_t) is now a proximity threshold in [0, 1] (e.g. 0.2),
-        #    matching your PDF formula r_p(t) = p_t - p_a(t) directly!
         lidar_prox = self.get_lidar_proximity(agent)
         max_prox, _ = torch.max(lidar_prox, dim=-1)  # p_a(t)
         agent.r_p = torch.clamp(self.min_proximity - max_prox, max=0.0) * self.w_prox
 
-        # 3. Steady Relative Velocity Reward r_v^rel(t) = epsilon_v - | ||v_a(t) - v_t(t)|| - target_rel_speed |
-        rel_vel_norm = torch.linalg.vector_norm(
-            agent.state.vel - self._target.state.vel, dim=-1
-        )
-        rel_vel_error = (rel_vel_norm - self.target_rel_speed).abs()
-        agent.r_v_rel = (self.epsilon_v - rel_vel_error) * self.w_v_rel
+        # 3. Tangential Orbital Speed Reward: v_tan(t) = |r(t) x v_rel(t)| / ||r(t)||
+        rel_vel = agent.state.vel - self._target.state.vel
+        dist = r_i.clamp(min=1e-6)
+        tangential_speed = (
+            rel_pos[:, 0] * rel_vel[:, 1] - rel_pos[:, 1] * rel_vel[:, 0]
+        ).abs() / dist
+        tan_vel_error = (tangential_speed - self.target_rel_speed).abs()
+        agent.r_v_rel = (self.epsilon_v - tan_vel_error) * self.w_v_rel
 
         # 4. Max Velocity Reward r_v^max(t) = v_max - ||v_a(t)||
         abs_vel_norm = torch.linalg.vector_norm(agent.state.vel, dim=-1)
@@ -320,12 +314,15 @@ class StableFlocking(BaseScenario):
         return agent.native_rew
 
     def observation(self, agent: Agent):
+        lidar_obs = self.get_lidar_proximity(agent)
+        if not self.observe_peers:
+            lidar_obs = torch.zeros_like(lidar_obs)
         return torch.cat(
             [
                 agent.state.pos,                          # [0:2]
                 agent.state.vel,                          # [2:4]
                 agent.state.pos - self._target.state.pos, # [4:6]   -> matches dgoal(obs) in sfo.py
-                (self.get_lidar_proximity(agent) if self.observe_peers else torch.zeros_like(self.get_lidar_proximity(agent))),  # [6:18]
+                lidar_obs,                                # [6:18]  -> matches dlidar(obs) in sfo.py
                 agent.state.vel - self._target.state.vel, # [18:20] -> relative velocity to target
             ],
             dim=-1,
@@ -390,48 +387,37 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
 
 if __name__ == "__main__":
+    import vmas
     from config import Config
-    from vmas import render_interactively
 
     cfg = Config()
     scenario = StableFlocking()
 
-    render_interactively(
+    env = vmas.make_env(
         scenario=scenario,
-        control_two_agents=True,
-
-        # Environment configuration
-        n_agents=2,
+        num_envs=1,
+        device=cfg.DEVICE,
+        n_agents=cfg.NUM_AGENTS,
         min_dist_between_entities=cfg.AGENT_DISTANCE,
-
-        # Lidar
-        n_lidar_rays=cfg.N_LIDAR_RAYS,
         lidar_max_range=cfg.LIDAR_MAX_RANGE,
-        observe_peers=cfg.OBSERVE_PEERS,
-
-        # Reward and spawning
+        observe_peers=True,
         target_radius=cfg.TARGET_RADIUS,
         epsilon_t=cfg.EPSILON_T,
         spawn_in_band=cfg.SPAWN_IN_BAND,
-        flat_band_bonus=cfg.FLAT_BAND_BONUS,
         min_proximity=cfg.MIN_PROXIMITY,
         target_rel_speed=cfg.TARGET_REL_SPEED,
         epsilon_v=cfg.EPSILON_V,
         v_max=cfg.V_MAX,
-
-        # Reward weights
         w_dist=cfg.W_DIST,
         w_prox=cfg.W_PROX,
         w_v_rel=cfg.W_V_REL,
         w_v_max=cfg.W_V_MAX,
-
-        # Wind
         wind_strength=cfg.WIND_STRENGTH,
         wind_gust_strength=cfg.WIND_GUST_STRENGTH,
         random_wind_direction=cfg.RANDOM_WIND_DIRECTION,
-
-        # Target
         target_speed_action=cfg.TARGET_SPEED_ACTION,
         target_turn_rate=cfg.TARGET_TURN_RATE,
         target_boundary_margin=cfg.TARGET_BOUNDARY_MARGIN,
     )
+
+    render_interactively(env=env, control_two_agents=True)
