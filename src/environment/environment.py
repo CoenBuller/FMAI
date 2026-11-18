@@ -95,8 +95,9 @@ def make_env(
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             device=cfg.DEVICE,
             seed=seed,
-            n_agents=cfg.N_AGENTS,
+            n_agents=cfg.NUM_AGENTS,
             min_dist_between_entities=cfg.AGENT_DISTANCE,
+            lidar_max_range=cfg.LIDAR_MAX_RANGE,
             target_radius=cfg.TARGET_RADIUS,
             epsilon_t=cfg.EPSILON_T,
             spawn_in_band=cfg.SPAWN_IN_BAND,
@@ -104,17 +105,16 @@ def make_env(
             target_rel_speed=cfg.TARGET_REL_SPEED,
             epsilon_v=cfg.EPSILON_V,
             v_max=cfg.V_MAX,
-            # Reward weights
             w_dist=cfg.W_DIST,
             w_prox=cfg.W_PROX,
             w_v_rel=cfg.W_V_REL,
             w_v_max=cfg.W_V_MAX,
-            # Wind parameters
             wind_strength=cfg.WIND_STRENGTH,
             wind_gust_strength=cfg.WIND_GUST_STRENGTH,
             random_wind_direction=cfg.RANDOM_WIND_DIRECTION,
-            # Target movement parameters
             target_speed_action=cfg.TARGET_SPEED_ACTION,
+            target_turn_rate=cfg.TARGET_TURN_RATE,
+            target_boundary_margin=cfg.TARGET_BOUNDARY_MARGIN,
         )
 
         

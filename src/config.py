@@ -8,7 +8,7 @@ from torch.nn import Tanh, ReLU, Sigmoid
 
 @dataclass
 class Config:
-    RESULTS_DIR: str = "results/flocking_sfo"
+    RESULTS_DIR: str = "results/flocking"
     RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 20                                 # Evaluate every 20 collector rollouts

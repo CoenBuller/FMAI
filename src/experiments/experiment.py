@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from environment.environment import make_env
 from fmai.train import train
 from fmai.agents import Agent
-from fmai.sfo import build_nav_spec, build_floc_spec, TAU2, TAU1
+from fmai.sfo import build_spec, TAU2, TAU1
 from config import Config
 
 from torchrl.envs.libs.vmas import VmasEnv
@@ -40,20 +40,6 @@ def parse_args():
     parser.add_argument("--results_dir", type=str, default=None)
     return parser.parse_args()
 
-def cli_overrides(args):
-    overrides = {}
-    if args.n_agents is not None:
-        overrides["NUM_AGENTS"] = args.n_agents
-    if args.seed is not None:
-        overrides["SEED"] = args.seed
-    if args.mappo is not None:
-        overrides["MAPPO"] = args.mappo
-    if args.shared_reward is not None:
-        overrides["SHARED_REW"] = args.shared_reward
-    if args.results_dir is not None:
-        overrides["RESULTS_DIR"] = args.results_dir
-    return overrides
-
 def load_experiment(path="experiment.yaml"):
     with open(path, encoding="utf-8") as f:
         y = yaml.safe_load(f)    
@@ -70,50 +56,61 @@ def load_experiment(path="experiment.yaml"):
         config=y["config"],
     )
 
-def run_all(
-    args,
-    path="experiment.yaml",
-    ):
+from fmai.sfo import build_spec, TAU2, TAU1
 
+def cli_overrides(args):
+    overrides = {}
+    if args.scenario is not None:
+        overrides["SCENARIO"] = args.scenario
+    if args.n_agents is not None:
+        overrides["NUM_AGENTS"] = args.n_agents
+    if args.seed is not None:
+        overrides["SEED"] = args.seed
+    if args.mappo is not None:
+        overrides["MAPPO"] = args.mappo
+    if args.shared_reward is not None:
+        overrides["SHARED_REW"] = args.shared_reward
+    if args.results_dir is not None:
+        overrides["RESULTS_DIR"] = args.results_dir
+    return overrides
+
+def run_all(args, path="experiment.yaml"):
     e = load_experiment(path)
     run_id = time.strftime("%Y%m%d_%H%M%S")
     overwrites = cli_overrides(args=args)
 
-    spec_builder = {
-        'navigation': build_nav_spec
-        'flocking': ...
-        }
-
-    spec, spec_desc = spec_builder.get(args.scenario, build_nav_spec)()
-
     for mode in e["modes"]:
         merged_cfg = {**e["config"], **overwrites, "REWARD_MODE": mode, "RUN_ID": run_id}
         cfg = Config(**merged_cfg)
-        
+
+        spec, spec_desc = build_spec(cfg)
+        window = cfg.TAU_FLOCK if cfg.SCENARIO == "flocking" else (TAU1 + TAU2)
+
         shaped = mode in ["rho", "mixed"]
         env = make_env(
-            cfg, 
-            num_envs=cfg.NUM_ENVS, 
-            seed=cfg.SEED, 
-            spec=spec if shaped else None, 
-            mode=mode, 
-            window=TAU2+TAU1
-            )
+            cfg,
+            num_envs=cfg.NUM_ENVS,
+            seed=cfg.SEED,
+            spec=spec if shaped else None,
+            mode=mode,
+            window=window,
+        )
         eval_env = make_env(
-            cfg, 
-            num_envs=cfg.EVAL_EPISODES, 
+            cfg,
+            num_envs=cfg.EVAL_EPISODES,
             seed=cfg.SEED + 1000,
             spec=None,
             mode="none",
-            window=TAU2+TAU1,
-            )        
+            window=window,
+        )
 
         torch.manual_seed(cfg.SEED)
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
 
-        training_hist = train(env=env, eval_env=eval_env, agent=agent, spec=spec, spec_desc=spec_desc, cfg=cfg)
-
+        training_hist = train(
+            env=env, eval_env=eval_env, agent=agent, spec=spec, spec_desc=spec_desc, cfg=cfg
+        )
 
 if __name__ == "__main__":
     args = parse_args()
