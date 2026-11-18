@@ -401,7 +401,7 @@ if __name__ == "__main__":
         control_two_agents=True,
 
         # Environment configuration
-        n_agents=cfg.NUM_AGENTS,
+        n_agents=2,
         min_dist_between_entities=cfg.AGENT_DISTANCE,
 
         # Lidar
