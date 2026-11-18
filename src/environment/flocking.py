@@ -15,7 +15,7 @@ from vmas.simulator.sensors import Lidar
 from vmas.simulator.utils import Color, ScenarioUtils, X, Y
 
 
-class Scenario(BaseScenario):
+class StableFlocking(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         n_agents = kwargs.pop("n_agents", 4)
         self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.15)
@@ -51,8 +51,10 @@ class Scenario(BaseScenario):
         self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)
         self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
-        # Target movement parameters
+        # Target smooth random-walk parameters
         self.target_speed_action = kwargs.pop("target_speed_action", 0.5)
+        self.target_turn_rate = kwargs.pop("target_turn_rate", 0.15)
+        self.target_boundary_margin = kwargs.pop("target_boundary_margin", 0.7)
 
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
@@ -67,8 +69,10 @@ class Scenario(BaseScenario):
         self.x_dim = 1
         self.y_dim = 1
 
-        # Base wind angle per environment in the batch
+        # Base wind angle & target random-walk state per environment in the batch
         self.wind_angle = torch.zeros((batch_dim, 1), device=device, dtype=torch.float32)
+        self.target_heading = torch.zeros((batch_dim, 1), device=device, dtype=torch.float32)
+        self.target_omega = torch.zeros((batch_dim, 1), device=device, dtype=torch.float32)
 
         # Make world (no obstacles)
         world = World(batch_dim, device, collision_force=400, substeps=5)
@@ -111,11 +115,45 @@ class Scenario(BaseScenario):
 
     def action_script_creator(self):
         def action_script(agent, world):
-            t = self.t / 30
-            agent.action.u = (
-                torch.stack([torch.cos(t), torch.sin(t)], dim=1)
+            # Smooth random walk via Ornstein-Uhlenbeck angular velocity
+            noise = torch.randn_like(self.target_omega) * self.target_turn_rate
+            self.target_omega = 0.9 * self.target_omega + 0.1 * noise
+            self.target_heading = self.target_heading + self.target_omega
+
+            # Base forward thrust along current smooth heading
+            thrust = (
+                torch.cat(
+                    [torch.cos(self.target_heading), torch.sin(self.target_heading)],
+                    dim=-1,
+                )
                 * self.target_speed_action
             )
+
+            # Soft boundary repulsion so the target stays inside the arena
+            pos = agent.state.pos
+            limit_x = self.x_dim * self.target_boundary_margin
+            limit_y = self.y_dim * self.target_boundary_margin
+
+            pull_x = -torch.relu(pos[:, X : X + 1].abs() - limit_x) * torch.sign(
+                pos[:, X : X + 1]
+            )
+            pull_y = -torch.relu(pos[:, Y : Y + 1].abs() - limit_y) * torch.sign(
+                pos[:, Y : Y + 1]
+            )
+            boundary_pull = torch.cat([pull_x, pull_y], dim=-1) * 2.0
+
+            u = thrust + boundary_pull
+            norm = torch.linalg.vector_norm(u, dim=-1, keepdim=True).clamp(min=1e-6)
+            # Keep magnitude bounded by target_speed_action and align heading when pulled back
+            u = torch.where(
+                norm > self.target_speed_action,
+                u / norm * self.target_speed_action,
+                u,
+            )
+            agent.action.u = u
+
+            # Sync target_heading with actual thrust direction so turns near boundaries stay smooth
+            self.target_heading = torch.atan2(u[:, 1:2], u[:, 0:1])
 
         return action_script
 
@@ -177,6 +215,16 @@ class Scenario(BaseScenario):
     def reset_world_at(self, env_index: int = None):
         if env_index is None:
             self.t = torch.zeros(self.world.batch_dim, device=self.world.device)
+            self.target_heading = (
+                torch.rand(
+                    (self.world.batch_dim, 1),
+                    device=self.world.device,
+                    dtype=torch.float32,
+                )
+                * 2
+                * torch.pi
+            )
+            self.target_omega.zero_()
             if self.random_wind_direction:
                 self.wind_angle = (
                     torch.rand(
@@ -189,6 +237,12 @@ class Scenario(BaseScenario):
                 )
         else:
             self.t[env_index] = 0
+            self.target_heading[env_index] = (
+                torch.rand((1,), device=self.world.device, dtype=torch.float32)
+                * 2
+                * torch.pi
+            )
+            self.target_omega[env_index] = 0.0
             if self.random_wind_direction:
                 self.wind_angle[env_index] = (
                     torch.rand((1,), device=self.world.device, dtype=torch.float32)
@@ -205,7 +259,6 @@ class Scenario(BaseScenario):
             device=self.world.device,
             dtype=torch.float32,
         )
-        target_pos[:, Y] = -self.y_dim * 0.5
         self._target.set_pos(target_pos, batch_index=env_index)
 
         if self.spawn_in_band:
@@ -227,7 +280,6 @@ class Scenario(BaseScenario):
             self.t += 1
 
         # 1. Distance reward r_d(t) with band margin epsilon_t
-        #    Positive inside [r_t - epsilon_t, r_t + epsilon_t], negative outside
         r_i = torch.linalg.vector_norm(
             agent.state.pos - self._target.state.pos, dim=-1
         )

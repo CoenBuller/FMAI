@@ -9,7 +9,7 @@ from navigation_sfo import NavigationSFO
 from vmas.scenarios.navigation import Scenario
 from vmas.simulator.core import Agent
 
-from environment.Flocking ipmort flocking
+from environment.flocking ipmort StableFlocking
 
 class RobustnessReward(Transform):
     """Adds the team robustness of `spec` to the reward at every step, computed on the GPU inside the env.
@@ -88,18 +88,35 @@ def make_env(
             mu2_cap=0.2,
         )
 
-    elif cfg["SCENARIO"] == "flocking":
+   elif cfg["SCENARIO"] == "flocking":
         env = VmasEnv(
-            scenario=Flocking(),
+            scenario=StableFlocking(),
             num_envs=num_envs,
             continuous_actions=cfg.CONTINUOUS_ACTIONS,
             device=cfg.DEVICE,
             seed=seed,
-            n_agents=cfg.NUM_AGENTS,
-            shared_rew=cfg.SHARED_REW,
-            observe_peers=cfg.OBSERVE_PEERS
-
+            n_agents=cfg.N_AGENTS,
+            min_dist_between_entities=cfg.AGENT_DISTANCE,
+            target_radius=cfg.TARGET_RADIUS,
+            epsilon_t=cfg.EPSILON_T,
+            spawn_in_band=cfg.SPAWN_IN_BAND,
+            min_proximity=cfg.MIN_PROXIMITY,
+            target_rel_speed=cfg.TARGET_REL_SPEED,
+            epsilon_v=cfg.EPSILON_V,
+            v_max=cfg.V_MAX,
+            # Reward weights
+            w_dist=cfg.W_DIST,
+            w_prox=cfg.W_PROX,
+            w_v_rel=cfg.W_V_REL,
+            w_v_max=cfg.W_V_MAX,
+            # Wind parameters
+            wind_strength=cfg.WIND_STRENGTH,
+            wind_gust_strength=cfg.WIND_GUST_STRENGTH,
+            random_wind_direction=cfg.RANDOM_WIND_DIRECTION,
+            # Target movement parameters
+            target_speed_action=cfg.TARGET_SPEED_ACTION,
         )
+
         
     transforms = [StepCounter(max_steps=cfg.MAX_STEPS)]              # time limit = truncation
     if spec is not None and mode in ("rho", "mixed"):

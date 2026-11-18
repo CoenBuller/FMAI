@@ -27,6 +27,28 @@ class Config:
     CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
     SHARED_REW: bool = False                                # Added flag for shared/common reward
     OBSERVE_PEERS: bool = False
+
+    # Flocking configs 
+    AGENT_DISTANCE: float = 0.15
+    TARGET_RADIUS: float = 0.3                              # Central target radius at which the agents should flock around the target
+    EPSILON_T: float = 0.05                                 # Band width of the target radius
+    SPAWN_IN_BAND: bool = True                              # If the agents should spawn in the band around the target
+    MIN_PROXIMITY: float = 0.15                             # Minimal proximity the agents should keep between them
+
+    TARGET_REL_SPEED: float = 0.25                          # Target relative speed the agents should keep
+    EPSILON_V: float = 0.05                                 # Tolerance band around target velocity
+    V_MAX: float = 0.85                                      # Maximum speed of the agents 
+
+    W_DIST: float = 1
+    W_PROX: float = 1
+    W_V_REL: float = 1
+    W_V_MAX: float = 1
+
+    WIND_STRENGTH: float = 0.08
+    WIND_GUST_STRENGTH: float = 0.04
+    RANDOM_WIND_DIRECTION: bool = True
+    
+    TARGET_SPEED_ACTION: float = 0.5
     
     #---------------------------------- Agent Config ----------------------------------#
     
