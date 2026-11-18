@@ -1,9 +1,9 @@
 #!/bin/bash 
 
-RESULTS_DIR="${RESULTS_DIR:-results/hyperparam}"
-SEEDS="${SEEDS:-30 31 32 33 34 35}"
+RESULTS_DIR="${RESULTS_DIR:-results/flocking}"
+SEEDS="${SEEDS:-30 31 32}"
 MAPPO="${MAPPO:-False}"
-N_AGENTS="${N_AGENTS:-4 5 6 7 8}"
+N_AGENTS="${N_AGENTS:-3 4 5 6}"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -16,7 +16,7 @@ mkdir -p "local_logs"
 
 run_one() {
     local mappo="$1" n_agents="$2" seed="$3" results="$4"
-    local name="mappo_${mappo}_agents_${n_agents}_seed_${seed}"
+    local name="agents_${n_agents}_seed_${seed}"
     local log="local_logs/${name}.log"
 
     echo "[$(date +%H:%M:%S)] START $name -> $log"
