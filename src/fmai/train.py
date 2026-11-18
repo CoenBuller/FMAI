@@ -30,9 +30,10 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
 
     obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
     first_ep = (obs[..., 0, -1] == 0)                                    # [E, T]
+    mask = first_ep[..., None, None]                                     # [E, T, 1, 1]
 
     rew = rollout["next", "agents", "reward"]                            # native: the eval env has no shaping
-    ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)       # [E, A]
+    ret = (rew * mask).sum(dim=1).squeeze(-1)                            # [E, A]
 
     rho_env = rho_per_env(spec, rollout)                                 # [E], first-order spec robustness
     pass_rate, _ = ms((rho_env >= 0).float())
@@ -40,26 +41,43 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))
     rho_mean, rho_std = ms(rho_env)
 
-    # Reference metrics from the NavigationSFO info
+    # Reference metrics from scenario info
     inf = rollout["next", "agents", "info"]
     mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)            # [E, T, A]
     sep = mu2.amin(dim=1).amin(dim=-1)                                   # [E], worst separation margin
     all_at_goal = (mu1 >= 0).all(dim=-1)                                 # [E, T]
 
-    return {
+    out = {
         "episode": training_episode,
+        "step": training_episode * cfg.MAX_STEPS,
         "return_mean": ret_mean,
         "return_std": ret_std,
         "return_agent_std": ret_agent_std,
         "rho_mean": rho_mean,
         "rho_std": rho_std,
         "pass_rate": pass_rate,
-        "native_return": inf["native_rew"].squeeze(-1).sum(dim=1).mean().item(),
+        "native_return": (inf["native_rew"] * mask).squeeze(-1).sum(dim=1).mean().item(),
         "success_rate": all_at_goal[:, -1].float().mean().item(),
         "violation_rate": (sep < 0).float().mean().item(),
         "min_separation": (sep + 0.3).mean().item(),
         "collision_steps": (inf["collisions"].squeeze(-1).sum(dim=(1, 2)) / 2).mean().item(),
     }
+
+    # Track individual reward components if present (r_d, r_p, r_v_rel, r_v_max)
+    rew_comps = {}
+    for k in ("r_d", "r_p", "r_v_rel", "r_v_max"):
+        if k in inf.keys():
+            rew_comps[k] = (inf[k] * mask).squeeze(-1).sum(dim=1).mean().item()
+    if rew_comps:
+        out["reward_components"] = rew_comps
+
+    # Track per-clause SFO robustness & failure rates (why an env fails)
+    sub_rho, sub_fail = sub_rho_per_env(spec, rollout)
+    if sub_rho:
+        out["sub_rho"] = sub_rho
+        out["sub_fail_rate"] = sub_fail
+
+    return out
 
 
 # ----------------------------- training -----------------------------
@@ -187,12 +205,10 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
             # For progress bar
             post = {
                 "ret": f"{info['native_return']:.2f}", 
-                "succ": f"{info['success_rate']:.2f}",
-                "ent": f"{info['entropy']:.2f}"
-                }
-            if mode in ["rho", "mixed"]:
-                post["rho"] = f"{info['rho_mean']:.3f}"
-            p_bar.set_postfix(**post) # type: ignore
+                "pass": f"{info['pass_rate']:.2f}",
+                "rho": f"{info['rho_mean']:.3f}",
+            }
+            p_bar.set_postfix(**post)  # type: ignore
 
             # Save gif if cfg.EVAL_GIF == True
             if cfg.EVAL_GIF:
@@ -203,8 +219,10 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     collector.shutdown()
     p_bar.close()
     save_agent(agent, paths["Agent"])
-    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)       # was paths["Agent"], which overwrote the checkpoint
+    if cfg.EVAL_GIF:
+        save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
     return history
+
 
 if __name__ == "__main__":
     import time

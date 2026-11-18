@@ -1,8 +1,8 @@
 import torch
 from fmai.robustness import Pred, Defined, And, Or, Not, WeightedRobustness
 
-TAU1, TAU2 = 1, 2
-TAU_FLOCK = 3  # Recovery horizon tau for flocking ( fits inside W = TAU1 + TAU2 = 3 )
+TAU1, TAU2 = 2, 2
+TAU_FLOCK = 4  # Recovery horizon tau for flocking (matches W = TAU1 + TAU2 = 4)
 
 def dgoal(obs):                      
     return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)
@@ -39,20 +39,20 @@ def vabs(obs):
     """Absolute agent speed: ||v_a(t)||"""
     return torch.linalg.vector_norm(obs[..., 2:4], dim=-1)
 
-def dband_err(obs, r_t=0.3):
+def dband_err(obs, r_t=0.30):
     """Orbital radius error: | ||p_a(t) - p_t(t)|| - r_t |"""
     return (dgoal(obs) - r_t).abs()
 
-def shift_dband_err(s, r_t=0.3):
+def shift_dband_err(s, r_t=0.30):
     """dband_err(t - s) shifted back by s steps"""
     return lambda o: lag(dband_err(o, r_t), s, o[..., 0, -1])
 
 def vtan(obs):
-    """Tangential orbital speed around the moving target: |r(t) x v_rel(t)| / ||r(t)||"""
+    """Signed counter-clockwise tangential orbital speed around target: (r_x * v_rel_y - r_y * v_rel_x) / ||r(t)||"""
     rel_pos = obs[..., 4:6]
     rel_vel = obs[..., 18:20]
     dist = torch.linalg.vector_norm(rel_pos, dim=-1).clamp(min=1e-6)
-    return rel_pos[..., 0] * rel_vel[..., 1] - rel_pos[..., 1] * rel_vel[..., 0] / dist
+    return (rel_pos[..., 0] * rel_vel[..., 1] - rel_pos[..., 1] * rel_vel[..., 0]) / dist
 
 def vrel_err(obs, v_r=0.20):
     """Tangential speed error: | v_tan(t) - v_r |"""
@@ -82,18 +82,22 @@ def build_nav_spec():
     past_da = [Defined(Pred(shift_dlidar(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
     va      = [Defined(Pred(vlidar(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
 
-    phi = And(
-        Or(Defined(Not(sda1)), Not(da), dg, *vg),
-        Or(da, *past_da, *va),
-        dap,
-    )
+    c_goal_prog = Or(Defined(Not(sda1)), Not(da), dg, *vg)
+    c_space_rec = Or(da, *past_da, *va)
+    phi = And(c_goal_prog, c_space_rec, dap)
 
     desc = [
         r"$\forall t: (\neg da(t-\tau_1) \vee \neg da(t) \vee d_g(t) \vee v_g(t)) "
         r"\wedge (\bigvee_{s=0}^{\tau_2} da(t-s) \vee \bigvee_{s=1}^{\tau_2} v_a(t,s)) "
         r"\wedge d_a^{+}(t)$"
     ]
-    return WeightedRobustness([phi], weights=None, clip=1.0), desc
+    spec = WeightedRobustness([phi], weights=None, clip=1.0)
+    spec.sub_formulas = {
+        "goal_prog": c_goal_prog,
+        "space_rec": c_space_rec,
+        "hard_safe": dap,
+    }
+    return spec, desc
 
 
 def build_floc_spec(cfg=None, tau=TAU_FLOCK):
@@ -107,11 +111,11 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     """
     tau   = cfg.TAU_FLOCK if cfg is not None else tau
     r_t   = cfg.TARGET_RADIUS if cfg is not None else 0.30
-    eps_t = cfg.EPSILON_T if cfg is not None else 0.05
-    p_t   = cfg.MIN_PROXIMITY if cfg is not None else 0.45
+    eps_t = cfg.EPSILON_T if cfg is not None else 0.055
+    p_t   = cfg.MIN_PROXIMITY if cfg is not None else 0.50
     v_r   = cfg.TARGET_REL_SPEED if cfg is not None else 0.20
     eps_v = cfg.EPSILON_V if cfg is not None else 0.05
-    v_max = cfg.V_MAX if cfg is not None else 0.60
+    v_max = cfg.V_MAX if cfg is not None else 0.55
 
     # 1. Strict invariants: phi_c(t) and phi_v^m(t)
     phi_c   = Pred(dlidar, "<", p_t)
@@ -141,7 +145,14 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
         r"\wedge \left(\bigvee_{i=0}^{\tau} \varphi_d(t-i)\right) "
         r"\wedge \left(\bigvee_{i=0}^{\tau} \varphi_v^a(t-i)\right)$"
     ]
-    return WeightedRobustness([phi_flock], weights=None, clip=1.0), desc
+    spec = WeightedRobustness([phi_flock], weights=None, clip=1.0)
+    spec.sub_formulas = {
+        "phi_c (collision)": phi_c,
+        "phi_vm (v_max)": phi_v_m,
+        "phi_sd (dist_band)": phi_s_d,
+        "phi_sv (tan_speed)": phi_s_v,
+    }
+    return spec, desc
 
 
 def build_spec(cfg=None):

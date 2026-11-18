@@ -38,6 +38,8 @@ def parse_args():
     parser.add_argument("--shared_reward", type=str_to_bool, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--results_dir", type=str, default=None)
+    parser.add_argument("--wind_strength", type=float, default=None)
+    parser.add_argument("--wind_gust_strength", type=float, default=None)
     return parser.parse_args()
 
 def load_experiment(path="experiment.yaml"):
@@ -72,6 +74,10 @@ def cli_overrides(args):
         overrides["SHARED_REW"] = args.shared_reward
     if args.results_dir is not None:
         overrides["RESULTS_DIR"] = args.results_dir
+    if args.wind_strength is not None:
+        overrides["WIND_STRENGTH"] = args.wind_strength
+    if args.wind_gust_strength is not None:
+        overrides["WIND_GUST_STRENGTH"] = args.wind_strength
     return overrides
 
 def run_all(args, path="experiment.yaml"):

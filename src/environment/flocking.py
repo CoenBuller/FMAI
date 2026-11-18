@@ -18,7 +18,7 @@ from vmas.simulator.utils import Color, ScenarioUtils, X, Y
 class StableFlocking(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         n_agents = kwargs.pop("n_agents", 4)
-        self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.15)
+        self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.19)
 
         # Lidar configuration
         self.n_lidar_rays = kwargs.pop("n_lidar_rays", 12)
@@ -27,19 +27,19 @@ class StableFlocking(BaseScenario):
 
         # --- Reward & Band Parameters ---
         # 1. Distance band around target: r_d(t) = epsilon_t - |r_i(t) - r_t|
-        self.target_radius = kwargs.pop("target_radius", 0.3)          # r_t
-        self.epsilon_t = kwargs.pop("epsilon_t", 0.05)                 # epsilon_t (band half-width & positive bonus)
+        self.target_radius = kwargs.pop("target_radius", 0.32)         # r_t
+        self.epsilon_t = kwargs.pop("epsilon_t", 0.08)                 # epsilon_t (band half-width & positive bonus)
         self.flat_band_bonus = kwargs.pop("flat_band_bonus", False)    # if True: +epsilon_t anywhere inside band
         self.spawn_in_band = kwargs.pop("spawn_in_band", True)         # if True: spawn agents inside [r_t - eps, r_t + eps]
 
         # 2. Lidar proximity threshold p_t
-        self.min_proximity = kwargs.pop("min_proximity", 0.45)         # p_t
+        self.min_proximity = kwargs.pop("min_proximity", 0.60)         # p_t
 
         # 3. Tangential orbital speed & max velocity limit
         #    r_v^rel(t) = epsilon_v - | v_tan(t) - target_rel_speed |
-        self.target_rel_speed = kwargs.pop("target_rel_speed", 0.20)   # v_r: desired tangential orbital speed
-        self.epsilon_v = kwargs.pop("epsilon_v", 0.05)                 # tolerance band around target_rel_speed
-        self.v_max = kwargs.pop("v_max", 0.60)                         # r_v^max(t) = v_max - ||v_a(t)||
+        self.target_rel_speed = kwargs.pop("target_rel_speed", 0.18)   # v_r: desired tangential orbital speed
+        self.epsilon_v = kwargs.pop("epsilon_v", 0.07)                 # tolerance band around target_rel_speed
+        self.v_max = kwargs.pop("v_max", 0.55)                         # r_v^max(t) = v_max - ||v_a(t)||
 
         # Reward weights (all 1.0 by default: R(t) = r_v_rel + r_v_max + r_p + r_d)
         self.w_dist = kwargs.pop("w_dist", 1.0)
@@ -48,13 +48,13 @@ class StableFlocking(BaseScenario):
         self.w_v_max = kwargs.pop("w_v_max", 1.0)
 
         # Wind parameters
-        self.wind_strength = kwargs.pop("wind_strength", 0.08)
-        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)
+        self.wind_strength = kwargs.pop("wind_strength", 0.0)
+        self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.0)
         self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
         # Target smooth random-walk parameters
-        self.target_speed_action = kwargs.pop("target_speed_action", 0.30)
-        self.target_turn_rate = kwargs.pop("target_turn_rate", 0.12)
+        self.target_speed_action = kwargs.pop("target_speed_action", 0.15)
+        self.target_turn_rate = kwargs.pop("target_turn_rate", 0.08)
         self.target_boundary_margin = kwargs.pop("target_boundary_margin", 0.70)
 
         ScenarioUtils.check_kwargs_consumed(kwargs)
@@ -81,8 +81,10 @@ class StableFlocking(BaseScenario):
         )
         world.add_agent(self._target)
 
-        # Lidar detects other Agents (VMAS Lidar automatically ignores self)
-        agent_entity_filter: Callable[[Entity], bool] = lambda e: isinstance(e, Agent)
+        # Lidar detects other policy Agents (VMAS Lidar ignores self; filter excludes target)
+        agent_entity_filter: Callable[[Entity], bool] = (
+            lambda e: isinstance(e, Agent) and e is not self._target
+        )
 
         for i in range(n_agents):
             agent = Agent(
@@ -193,7 +195,7 @@ class StableFlocking(BaseScenario):
         )
         jitter = (
             (torch.rand((batch_size, n_agents), device=device, dtype=torch.float32) - 0.5)
-            * 0.5
+            * 0.2
             * sector_size
         )
         angles = base_rotation + sector_offsets + jitter
@@ -359,14 +361,14 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         lidar_prox = observation[:, 6:18]
 
         circle_origin = current_pos - rel_pos_to_target
-        circle_radius = 0.3
+        circle_radius = 0.32
         v = rel_pos_to_target
         v_norm = torch.linalg.norm(v, dim=1, keepdim=True).clamp(min=1e-6)
         closest_point_on_circ = circle_origin + (v / v_norm) * circle_radius
 
         radial_from_origin = closest_point_on_circ - circle_origin
         closest_point_on_circ_normal = torch.stack(
-            [radial_from_origin[:, Y], -radial_from_origin[:, X]], dim=1
+            [-radial_from_origin[:, Y], radial_from_origin[:, X]], dim=1
         )
         normal_norm = torch.linalg.norm(
             closest_point_on_circ_normal, dim=1, keepdim=True
@@ -374,7 +376,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         closest_point_on_circ_normal = (closest_point_on_circ_normal / normal_norm) * 0.1
         des_pos = closest_point_on_circ + closest_point_on_circ_normal
 
-        object_visible = torch.any(lidar_prox > 0.45, dim=1)
+        object_visible = torch.any(lidar_prox > 0.60, dim=1)
         _, object_dir_index = torch.max(lidar_prox, dim=1)
         object_dir = object_dir_index / lidar_prox.shape[1] * 2 * torch.pi
         object_vec = torch.stack([torch.cos(object_dir), torch.sin(object_dir)], dim=1)
