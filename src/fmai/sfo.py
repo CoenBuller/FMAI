@@ -99,6 +99,7 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     3. Bounded-time orbital band recovery:   phi_s^d(t) = Or_{i=0..tau} (|r_i(t-i) - r_t| <= eps_T)
     4. Bounded-time relative speed recovery: phi_s^v(t) = Or_{i=0..tau} (| ||v_a(t-i) - v_t(t-i)|| - v_r | <= eps_v)
     """
+    tau = cfg.TAU_FLOCK if cfg is not None else tau
     r_t   = cfg.TARGET_RADIUS if cfg is not None else 0.3
     eps_t = cfg.EPSILON_T if cfg is not None else 0.05
     p_t   = cfg.MIN_PROXIMITY if cfg is not None else 0.45
@@ -126,7 +127,7 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     ]
     phi_s_v = Or(*phi_v_lags)
 
-    # Complete formula: phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t)
+    # Complete formula: phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t) 
     phi_flock = And(phi_c, phi_v_m, phi_s_d, phi_s_v)
 
     desc = [

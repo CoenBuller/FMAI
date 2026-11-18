@@ -330,7 +330,6 @@ class StableFlocking(BaseScenario):
                 agent.state.pos - self._target.state.pos, # [4:6]   -> matches dgoal(obs) in sfo.py
                 self.get_lidar_proximity(agent),          # [6:18]  -> matches dlidar(obs) in sfo.py
                 agent.state.vel - self._target.state.vel, # [18:20] -> relative velocity to target
-                self.get_wind_at(agent),                  # [20:22] -> local wind
             ],
             dim=-1,
         )
@@ -361,8 +360,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
         current_pos = observation[:, 0:2]
         rel_pos_to_target = observation[:, 4:6]
-        wind = observation[:, 8:10]
-        lidar = observation[:, 10:22]
+        lidar_prox = observation[:, 6:18]
 
         circle_origin = current_pos - rel_pos_to_target
         circle_radius = 0.3
@@ -374,26 +372,24 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         closest_point_on_circ_normal = torch.stack(
             [radial_from_origin[:, Y], -radial_from_origin[:, X]], dim=1
         )
-        normal_norm = torch.linalg.norm( 
+        normal_norm = torch.linalg.norm(
             closest_point_on_circ_normal, dim=1, keepdim=True
         ).clamp(min=1e-6)
         closest_point_on_circ_normal = (closest_point_on_circ_normal / normal_norm) * 0.1
         des_pos = closest_point_on_circ + closest_point_on_circ_normal
 
-        object_visible = torch.any(lidar < 0.15, dim=1)
-        _, object_dir_index = torch.min(lidar, dim=1)
-        object_dir = object_dir_index / lidar.shape[1] * 2 * torch.pi
+        object_visible = torch.any(lidar_prox > 0.45, dim=1)
+        _, object_dir_index = torch.max(lidar_prox, dim=1)
+        object_dir = object_dir_index / lidar_prox.shape[1] * 2 * torch.pi
         object_vec = torch.stack([torch.cos(object_dir), torch.sin(object_dir)], dim=1)
         des_pos_object = current_pos - object_vec * 0.15
         des_pos[object_visible] = des_pos_object[object_visible]
 
-        action = torch.clamp(
-            (des_pos - current_pos) * 10 - wind,
+        return torch.clamp(
+            (des_pos - current_pos) * 10,
             min=-u_range,
             max=u_range,
         )
-
-        return action
 
 
 if __name__ == "__main__":

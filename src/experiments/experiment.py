@@ -32,7 +32,7 @@ def parse_args():
         required=True,
         help="Path to experiment .yaml config",
     )
-    parser.add_argument("--scenario", type=str, default="navigation")
+    parser.add_argument("--scenario", type=str, default=None)
     parser.add_argument("--n_agents", type=int, default=None)
     parser.add_argument("--mappo", type=str_to_bool, default=None)
     parser.add_argument("--shared_reward", type=str_to_bool, default=None)
