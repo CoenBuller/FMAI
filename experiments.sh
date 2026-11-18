@@ -1,9 +1,9 @@
 #!/bin/bash 
 
 RESULTS_DIR="${RESULTS_DIR:-results/flocking}"
-SEEDS="${SEEDS:-30 31 32}"
+SEEDS="${SEEDS:-30 31 32 33 34}"
 MAPPO="${MAPPO:-False}"
-N_AGENTS="${N_AGENTS:-3 4 5 6}"
+N_AGENTS="${N_AGENTS:-3}"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -31,7 +31,7 @@ run_one() {
 for alg in $MAPPO; do
     for n in $N_AGENTS; do
         for seed in $SEEDS; do
-            dir="$RESULTS_DIR/mappo_${alg}/agents_${n}/seed_${seed}"
+            dir="$RESULTS_DIR/seed_${seed}"
             run_one "$alg" "$n" "$seed" "$dir"
         done
     done

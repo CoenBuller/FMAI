@@ -65,8 +65,8 @@ def build_nav_spec():
     3. Hard safety (never critical distance): dap(t)
     """
     dg   = Pred(dgoal, "<=", 0.1)                        # At goal
-    da   = Pred(dlidar, "<", 0.2)                        # Well-spaced now
-    dap  = Pred(dlidar, "<", 0.8)                        # Never in critical distance
+    da   = Pred(dlidar, ">", 0.2)                        # Well-spaced now
+    dap  = Pred(dlidar, ">", 0.8)                        # Never in critical distance
     sda1 = Pred(shift_dlidar(TAU1), "<", 0.2)            # Well-spaced TAU1 steps ago
 
     # Progress toward goal over [1, TAU1]
