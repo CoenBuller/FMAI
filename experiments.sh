@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-RESULTS_DIR="${RESULTS_DIR:-results/flocking}"
+RESULTS_DIR="${RESULTS_DIR:-results/flocking_wind}"
 SEEDS="${SEEDS:-30 31 32 33 34}"
 MAPPO="${MAPPO:-False}"
 N_AGENTS="${N_AGENTS:-3}"
