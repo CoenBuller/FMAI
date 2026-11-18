@@ -8,15 +8,16 @@
 #SBATCH --time=14:00:00
 #SBATCH --output=fmai-%j.out
 # Trains every (experiment x option x seed) as its own process, all in parallel on the one GPU, then builds one
-# compare figure + table per experiment. Submit from your laptop with:  bash submit.sh
+# compare figure + table and a robustness analysis (experiments/analyze.py) per experiment. Submit from your laptop with:  bash submit.sh
 set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
-EXPERIMENTS="IPPO_individual.yaml experiment_1.yaml"   # files in src/experiments/
-MODES="none rho:coen mixed:coen"                       # options: none | rho[:spec] | mixed[:spec]
+EXPERIMENTS="IPPO_zones.yaml MAPPO_zones.yaml"         # files in src/experiments/ (danger zones + inertia)
+MODES="none mixed:zone rho:zone"                       # none | rho[:spec] | mixed[:spec]
 SEEDS="1 2 3"
-SMOOTH=20                                              # moving-average window (eval points) in the compare plots
-EXTRA=""                                               # flags for every run, e.g. "--steps 2000000 --agents 4"
+SMOOTH=5                                               # moving-average window (eval points) in the compare plots
+EXTRA="--no-early-stop"                                # flags for every run, e.g. "--steps 2000000 --agents 4"
+MAX_PARALLEL=18                                        # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
 # Code, venv and uv cache on the node's local disk (/home quota is small); results on /data, so they are
@@ -35,7 +36,7 @@ free_gb=$(df -BG --output=avail /local | tail -1 | tr -dc 0-9)
 [ "$free_gb" -ge 20 ] || { echo "Only ${free_gb}G free on /local, aborting"; exit 1; }
 
 mkdir -p "$WORK" "$OUT" "$LOGS"
-rsync -a --delete --exclude .venv --exclude results --exclude logs "$SLURM_SUBMIT_DIR"/ "$WORK"/
+rsync -a --delete --exclude .venv --exclude results --exclude logs --exclude output_temp "$SLURM_SUBMIT_DIR"/ "$WORK"/
 cd "$WORK"
 rm -rf results && ln -s "$OUT" results                 # RESULTS_DIR (results/...) is written straight to /data
 
@@ -47,32 +48,32 @@ uv pip install --python .venv/bin/python -r requirements.txt
 nvidia-smi
 .venv/bin/python -c "import torch; assert torch.cuda.is_available(), 'torch cannot see the GPU'"
 
-# GIFs need a display: start a virtual one if Xvfb exists (save_gif only warns if rendering fails)
-if command -v Xvfb >/dev/null; then
-    export DISPLAY=:$(( SLURM_JOB_ID % 900 + 100 ))
-    Xvfb "$DISPLAY" -screen 0 1024x768x24 >/dev/null 2>&1 &
-fi
-
+# GIFs: there is no display on the node, so save_gif falls back to its matplotlib renderer.
+# At most MAX_PARALLEL runs at a time; the next one starts as soon as one finishes.
 PY=".venv/bin/python -m experiments.experiment"
-pids=()
+n=0; failed=0
 for exp in $EXPERIMENTS; do
     rid="${SLURM_JOB_ID}_${exp%.yaml}"
     for mode in $MODES; do
         for seed in $SEEDS; do
+            while [ "$(jobs -rp | wc -l)" -ge "$MAX_PARALLEL" ]; do wait -n || failed=$((failed + 1)); done
             $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --run-id "$rid" $EXTRA \
                 > "$LOGS/${rid}_${mode/:/_}_seed${seed}.log" 2>&1 &
-            pids+=($!)
+            n=$((n + 1)); echo "Started run $n: $rid $mode seed $seed"
         done
     done
 done
-echo "Started ${#pids[@]} runs"
-
-failed=0
-for p in "${pids[@]}"; do wait "$p" || failed=$((failed + 1)); done
-echo "$failed of ${#pids[@]} runs failed (see $LOGS)"
+while [ -n "$(jobs -rp)" ]; do wait -n || failed=$((failed + 1)); done
+echo "$failed of $n runs failed (see $LOGS)"
 
 for exp in $EXPERIMENTS; do
     rid="${SLURM_JOB_ID}_${exp%.yaml}"
     $PY --exp "$exp" --run-id "$rid" --compare-only --smooth "$SMOOTH" $EXTRA || echo "compare failed for $exp"
+    .venv/bin/python -m experiments.analyze --traces "results/luc/traces/$rid" --agents "results/luc/agents/$rid" \
+        || echo "analysis failed for $exp"
 done
+# One figure + table over all experiments (e.g. IPPO and MAPPO): learning curves, final eval, steps to goal, spec rho
+.venv/bin/python -m experiments.summary --smooth "$SMOOTH" --out "results/luc/traces" \
+    --traces $(for exp in $EXPERIMENTS; do echo "results/luc/traces/${SLURM_JOB_ID}_${exp%.yaml}"; done) \
+    || echo "summary failed"
 echo "Results in $OUT/<RESULTS_DIR>/traces/${SLURM_JOB_ID}_*"

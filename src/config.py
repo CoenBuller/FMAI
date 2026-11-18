@@ -15,6 +15,7 @@ class Config:
     EPISODES: int|float = 1e6                               # Number of episodes to train for
     REWARD_MODE: str = "rho"                                # Agent can learn either using robustness (rho), using reward (rew), or mixed
     RHO_COEF: float = 1
+    RHO_SCALE: float = 1.0                                  # Future-time specs: reward rho is multiplied by this (rho and mixed)
     RUN_ID: str = ""
     HORIZON: int = 1000
     EVAL_GIF: bool = False
@@ -28,13 +29,23 @@ class Config:
     GOAL_EPS: float = 0.1                                   # Goal radius for early stopping and the reference robustness (mu1)
     SAFETY_DIST: float = 0.3                                # Centre-to-centre safety distance for the reference robustness (mu2)
 
+    # Danger zones and inertia (defaults = the original Navigation scenario)
+    N_ZONES: int = 0                                        # Danger zones per episode (0 = off)
+    ZONE_RADIUS: float = 0.25
+    ZONE_LIDAR_RANGE: float = 0.6                           # Range of the zone LiDAR in the observation
+    CAT_PROB: float = 0.0                                   # Chance per step inside a zone of a catastrophe
+    CAT_PENALTY: float = 0.0                                # Native reward of a catastrophe: -CAT_PENALTY
+    AGENT_MASS: float = 1.0                                 # Inertia: terminal speed ~ 1 / (AGENT_MASS * DRAG)
+    DRAG: float = 0.25
+
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "navigation"
     NUM_ENVS: int = 5
     NUM_AGENTS: int = 4
     MAX_STEPS: int = 1000                                   # Defines the horizon. None is infinite horizon.
     CONTINUOUS_ACTIONS: bool = True                         # Defines if actions are continuous or discrete
-    SHARED_REW: bool = False                                # Added flag for shared/common reward
+    SHARED_REW: bool = False                                # Team reward (VMAS sums the goal progress of all agents). Off for
+                                                            # IPPO and MAPPO alike, so the two differ only in the critic
 
     
     #---------------------------------- Agent Config ----------------------------------#
@@ -66,8 +77,6 @@ class Config:
     MINIBATCH: int = 20                                     # How many steps to update over at once
 
     def __post_init__(self):
-        if self.MAPPO:
-            self.SHARED_REW = True    # MAPPO implies a team reward
         if not self.STEPS:
             self.STEPS = int(self.EPISODES * self.MAX_STEPS)   # old yaml files only give EPISODES
     #---------------------------------- Retrieving variables ----------------------------------#

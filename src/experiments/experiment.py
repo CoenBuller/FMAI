@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from environment.environment import make_env
 from fmai.train import train
 from fmai.agents import Agent
-from fmai.sfo import build_spec, TAU2, TAU1
+from fmai.sfo import build_spec, WINDOW, FutureSpec
 from fmai.utils import option_label, save_compare_plots
 from pathlib import Path
 from config import Config
@@ -83,15 +83,18 @@ def run_all(
         cfg = Config(**{**base, "SEED": base0.SEED + s, "SPEC": spec_name or base0.SPEC},
                      REWARD_MODE=mode, RUN_ID=run_id)
         spec, spec_desc = build_spec(cfg.SPEC) if mode in ["rho", "mixed"] else (None, [])
+        reward_fn = spec.reward if isinstance(spec, FutureSpec) else None   # future-time: scored in train(), not in the env
+        if reward_fn is not None:
+            spec = None
 
-        shaped = mode in ["rho", "mixed"]
+        shaped = mode in ["rho", "mixed"] and spec is not None
         env = make_env(
             cfg, 
             num_envs=cfg.NUM_ENVS, 
             seed=cfg.SEED, 
             spec=spec if shaped else None, 
             mode=mode, 
-            window=TAU2+TAU1
+            window=WINDOW
             )
         eval_env = make_env(
             cfg, 
@@ -99,14 +102,15 @@ def run_all(
             seed=cfg.SEED + 1000,
             spec=None,
             mode="none",
-            window=TAU2+TAU1,
+            window=WINDOW,
             )        
 
         torch.manual_seed(cfg.SEED)
         agent = Agent()
         agent.make_agent(env=env, cfg=cfg)
 
-        training_hist = train(env=env, eval_env=eval_env, agent=agent, spec=eval_spec, spec_desc=spec_desc, cfg=cfg)
+        training_hist = train(env=env, eval_env=eval_env, agent=agent, spec=eval_spec, spec_desc=spec_desc, cfg=cfg,
+                              reward_fn=reward_fn)
         results.setdefault(option_label(cfg), []).append(training_hist)
 
     if base0.PLOT_MODE == "compare":

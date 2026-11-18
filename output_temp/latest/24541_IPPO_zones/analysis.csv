@@ -1,0 +1,4 @@
+option,seeds,episodes,prog_mean,rec_mean,safe_mean,zone_mean,total_mean,in_zone_mean,frac_steps_rho>=0,frac_episodes_rho>=0_all_steps,all_at_goal_at_end,progress_per_step,zone_entry_rate,catastrophes_per_episode
+native,3,300,0.564,0.8351,0.9401,0.8929,0.5125,0.0042,0.8527,0.29,0.9633,0.0206,0.1967,0.0033
+mixed_zone,3,300,-0.1054,0.8062,0.9255,0.9636,-0.1123,0.0013,0.419,0.0433,0.3933,0.0129,0.07,0.0067
+rho_zone,3,300,-0.5307,0.7062,0.8265,0.9833,-0.5383,0.0009,0.1365,0.0,0.04,0.0078,0.0533,0.0

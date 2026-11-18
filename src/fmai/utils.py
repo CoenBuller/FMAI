@@ -79,30 +79,52 @@ def save_history(history, path):
         json.dump(history, f, indent=2)
     tmp.replace(path)  
 
-def save_gif(eval_env, agent, max_steps, path, fps=30):
-    """Render env 0 of eval_env for one deterministic episode and save it as a GIF."""
+def save_gif(eval_env, agent, max_steps, path, fps=30, title="", zone_radius=0.25):
+    """Roll out env 0 of eval_env for one deterministic episode and save it as a GIF (agent=None: random actions).
+    Drawn with matplotlib from the scenario info, so it looks the same locally and on the cluster (no display)."""
+    with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
+        td = eval_env.rollout(max_steps=max_steps, policy=None if agent is None else agent.policy,
+                              break_when_any_done=False)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ImageSequenceClip(draw_frames(td, title=title, zone_radius=zone_radius), fps=fps).write_gif(str(path), logger=None)
+
+def draw_frames(td, env_index=0, radius=0.1, title="", zone_radius=0.25):
+    """Frames of one env's first episode: danger zones (red), goals (pale), trails, agents, catastrophes (X)."""
+    inf = td["next", "agents", "info"]
+    pos, goal = inf["pos"][env_index].cpu().numpy(), inf["goal"][env_index].cpu().numpy()    # [T, A, 2]
+    done = td["next", "done"][env_index].reshape(-1).cpu().numpy()
+    T = int(done.argmax()) + 1 if done.any() else len(done)                                  # first episode only
+    zones = inf["zones"][env_index, 0, 0].cpu().numpy() if "zones" in inf.keys() else np.zeros((0, 2))   # [K, 2]
+    zones = zones[np.abs(zones).max(-1) < 50]                                                # drop unused zones
+    cat = inf["catastrophe"][env_index].cpu().numpy() if "catastrophe" in inf.keys() else np.zeros(pos.shape[:2])
+    inside = (inf["mu3"][env_index].cpu().numpy() < 0) if "mu3" in inf.keys() else np.zeros(pos.shape[:2], bool)
+    pts = np.concatenate([pos[:T].reshape(-1, 2), goal[:T].reshape(-1, 2), zones.reshape(-1, 2), [[-1, -1], [1, 1]]])
+    lo, hi = pts.min(0) - 0.35, pts.max(0) + 0.35
+    colors = [c for k, c in enumerate(plt.get_cmap("tab10").colors) if k != 3]             # no red: that's the zones
+
+    fig, ax = plt.subplots(figsize=(4.5, 4.5), dpi=80)
     frames = []
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    def render_cb(env, td):
-        frames.append(eval_env.render(mode="rgb_array", agent_index_focus=None, env_index=0))
-    
-    try:                                                     # rendering needs a display; headless nodes may not have one
-        with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
-            eval_env.rollout(
-                max_steps=max_steps,
-                policy=agent.policy,
-                break_when_any_done=False,
-                callback=render_cb,
-            )
-    except Exception as err:
-        print(f"[save_gif] skipped, rendering failed: {err!r}")
-        return
-
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ImageSequenceClip(frames, fps=fps).write_gif(str(path), logger=None)
+    for t in range(T):
+        ax.clear()
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_aspect("equal")
+        ax.set_xticks([]); ax.set_yticks([])
+        for z in zones:
+            ax.add_patch(plt.Circle(z, zone_radius, facecolor="#d62728", edgecolor="#8b0000", alpha=0.3, lw=1.5))
+        for i in range(pos.shape[1]):
+            c = colors[i % len(colors)]
+            ax.add_patch(plt.Circle(goal[t, i], radius, color=c, alpha=0.25))                    # goal
+            ax.plot(pos[:t + 1, i, 0], pos[:t + 1, i, 1], color=c, lw=1, alpha=0.5)             # trail
+            ax.add_patch(plt.Circle(pos[t, i], radius, color=c))                                 # agent
+            for s in np.nonzero(cat[:t + 1, i])[0]:                                              # catastrophes so far
+                ax.plot(*pos[s, i], marker="x", color="black", ms=9, mew=2.5)
+        n_in, n_cat = int(inside[t].sum()), int(cat[:t + 1].sum())
+        ax.set_title(f"{title + chr(10) if title else ''}step {t + 1}/{T} | in zone: {n_in} | catastrophes: {n_cat}",
+                     fontsize=8)
+        fig.canvas.draw()
+        frames.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
+    plt.close(fig)
+    return frames
 
 def save_agent(agent, path):
     path = Path(path)
@@ -211,11 +233,19 @@ def save_plots(history, path):
 
 #--------------------------- Compare mode (PLOT_MODE="compare") ----------------------------#
 
-COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]   # fixed categorical order
+COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#8a5cd1", "#17becf", "#8c564b",
+          "#7a7a7a"]                                                   # last: options not in OPTION_ORDER
+OPTION_ORDER = ["native", "mixed_coen", "rho_coen", "mixed_luc", "rho_luc", "mixed_future", "rho_future",
+                "mixed_zone", "rho_zone"]
+
+def option_color(label):
+    """Same colour for an option in every figure, however many options a run has."""
+    k = OPTION_ORDER.index(label) if label in OPTION_ORDER else len(OPTION_ORDER)   # unknown options: grey
+    return COLORS[k % len(COLORS)]
 COMPARE_CURVES = [("return_mean", "Eval return (native)"), ("rho_mean", "Eval robustness ρ"),
                   ("loss_objective", "Actor loss"), ("loss_critic", "Critic loss")]
 COMPARE_TABLE = ["return_mean", "rho_mean", "pass_rate", "success_rate", "violation_rate",
-                 "min_separation", "collision_steps"]
+                 "min_separation", "collision_steps", "zone_entry_rate", "catastrophes"]   # zone metrics: zone env only
 
 
 def option_label(cfg):
@@ -252,8 +282,8 @@ def save_compare_plots(results, path, smooth_k=1, title=""):
             with warnings.catch_warnings():                              # step 0 has no losses (all NaN)
                 warnings.simplefilter("ignore", RuntimeWarning)
                 mean, std = np.nanmean(ys, 0), np.nanstd(ys, 0)
-            ax.plot(x, mean, color=COLORS[k % len(COLORS)], linewidth=2, label=f"{label} ({len(hists)} seeds)")
-            ax.fill_between(x, mean - std, mean + std, color=COLORS[k % len(COLORS)], alpha=0.2, linewidth=0)
+            ax.plot(x, mean, color=option_color(label), linewidth=2, label=f"{label} ({len(hists)} seeds)")
+            ax.fill_between(x, mean - std, mean + std, color=option_color(label), alpha=0.2, linewidth=0)
             ax.set(title=name, xlabel="Env steps")
             ax.grid(True, alpha=0.3)
     axes[0, 1].axhline(0.0, color="gray", linestyle=":", linewidth=1)
@@ -263,10 +293,11 @@ def save_compare_plots(results, path, smooth_k=1, title=""):
     fig.savefig(path.with_suffix(".png"), dpi=150)
     plt.close(fig)
 
-    rows = ["option,n_seeds," + ",".join(f"{m}_mean,{m}_std" for m in COMPARE_TABLE)]
-    print(f"\nFinal evaluation (mean +/- std over seeds)\n{'option':14s}" + "".join(f"{m:>22s}" for m in COMPARE_TABLE))
+    metrics = [m for m in COMPARE_TABLE if m in next(iter(results.values()))[0][-1]]
+    rows = ["option,n_seeds," + ",".join(f"{m}_mean,{m}_std" for m in metrics)]
+    print(f"\nFinal evaluation (mean +/- std over seeds)\n{'option':14s}" + "".join(f"{m:>22s}" for m in metrics))
     for label, hists in results.items():
-        vals = np.array([[h[-1][m] for m in COMPARE_TABLE] for h in hists])   # [seeds, metrics]
+        vals = np.array([[h[-1][m] for m in metrics] for h in hists])   # [seeds, metrics]
         mean, std = vals.mean(0), vals.std(0)
         rows.append(f"{label},{len(hists)}," + ",".join(f"{a:.4f},{b:.4f}" for a, b in zip(mean, std)))
         print(f"{label:14s}" + "".join(f"{a:>12.3f} +/- {b:<6.3f}" for a, b in zip(mean, std)))

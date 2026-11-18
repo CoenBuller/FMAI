@@ -1,0 +1,49 @@
+modes: [none, mixed:zone, rho:zone]
+
+# passed straight into the Config dataclass (field names must match)
+config:
+    RENDER: False
+    DEVICE: "cuda"
+    EVAL_INTERVAL: 3                                  # Eval every 3 PPO iterations (of NUM_ENVS*MAX_STEPS steps) -> ~37 points
+    SEED: 1                                           # Seed of the environment
+    EVAL_EPISODES: 100                                # How many episodes for evaluation
+    EPISODES: 33300                                   # Number of episodes to train for
+    RHO_COEF: 1
+    RHO_SCALE: 0.1                                    # zone spec rho is in [-1, 1] per step: 0.1 keeps it near the native reward scale
+    HORIZON: 4500
+    EVAL_GIF: False                                   # a GIF costs ~22 s and overwrites the same file; the final GIF is always saved
+
+    #---------------------------------- Env Config ----------------------------------#
+    SCENARIO: "navigation"
+    NUM_ENVS: 300
+    MAX_STEPS: 150                                    # Defines the horizon. None is infinite horizon.
+
+    #------------------------- Danger zones + inertia (see navigation_sfo.py) -------------------------#
+    N_ZONES: 2                                        # Danger zones per episode, on the paths of random agents
+    ZONE_RADIUS: 0.25
+    ZONE_LIDAR_RANGE: 0.6                             # Zone LiDAR in the observation (12 rays)
+    CAT_PROB: 0.002                                   # 1/500 chance per step inside a zone of a catastrophe ...
+    CAT_PENALTY: 15.0                                 # ... worth -15: crossing costs about as much as the detour
+    AGENT_MASS: 2.5                                   # Same top speed as mass 1 / drag 0.25, about 2.5x the inertia
+    DRAG: 0.1
+    EARLY_STOP: False
+    SHARED_REW: False
+
+    #---------------------------------- Agent Config ----------------------------------#
+    
+    # Agent architecture
+    MAPPO: False                                      # Set to True to use MAPPO. False defaults to IPPO
+    DEPTH: 2                                          # Number of hidden layers
+    N_NODES: 256                                      # Number of neurons per layer
+    ACTIVATION: "ReLu"                                # Activation function
+    
+    # PPO Loss
+    CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss
+    ENTROPY_COEF: 1.0e-3                              # Entropy coefficient to regularize action probabilities
+    GAMMA: 0.99                                       # Reward decay coefficient 
+    LAMBDA: 0.95                                      # Lambda parameter for Generalized Advantage Estimate (GAE)
+
+    # Optimizer
+    LR: 3.0e-4                                        # Learning rate
+    EPOCHS: 10                                        # Parameter update epochs
+    MINIBATCH: 4096   

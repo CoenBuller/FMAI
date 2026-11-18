@@ -49,6 +49,13 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_step: int, **kw
         rho_env = torch.minimum(reach, mu2.masked_fill(~m, float("inf")).amin(dim=1)).amin(dim=-1)
     else:
         rho_env = rho_per_env(spec, rollout)                             # [E], first-order spec robustness
+    zone = {}
+    if "mu3" in inf.keys():                                              # danger zones: never inside any zone
+        zmin = inf["mu3"].squeeze(-1).masked_fill(~m, float("inf")).amin(dim=1).amin(dim=-1)   # [E]
+        if spec is None:
+            rho_env = torch.minimum(rho_env, zmin)
+        zone = {"zone_entry_rate": (zmin < 0).float().mean().item(),    # episodes in which any agent entered a zone
+                "catastrophes": (inf["catastrophe"].squeeze(-1) * m).sum(dim=(1, 2)).mean().item()}
     pass_rate, _ = ms((rho_env >= 0).float())
     ret_mean, ret_std = ms(ret.mean(dim=1))
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))
@@ -67,12 +74,15 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_step: int, **kw
         "violation_rate": (sep < 0).float().mean().item(),
         "min_separation": (sep + 0.3).mean().item(),
         "collision_steps": ((inf["collisions"].squeeze(-1) * m).sum(dim=(1, 2)) / 2).mean().item(),
+        **zone,
     }
 
 
 # ----------------------------- training -----------------------------
 
-def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwargs):
+def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_fn=None, **kwargs):
+    """reward_fn: optional td -> [E, T, A] robustness, computed on each collected batch (future-time specs) and used
+    as the reward ('rho') or added to the native reward ('mixed') before the advantages are computed."""
     history = []
 
     modes = {"rho": "robustness", "none": "reward", "mixed": "robustness & reward"}
@@ -81,6 +91,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     print(f"\n======= mode: {modes[mode]} =======")
     stem = f"{cfg.SCENARIO}_{option_label(cfg)}_seed{cfg.SEED}"
     paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem)
+    gif_title = f"{'MAPPO' if cfg.MAPPO else 'IPPO'} | {option_label(cfg)} | seed {cfg.SEED}"
 
     E = env.batch_size[0]
     frames_per_batch = E * cfg.MAX_STEPS
@@ -118,9 +129,18 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
     save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
 
     params = list(agent.loss_module.parameters())
+    # Clip actor and critic gradients separately, so a large critic loss cannot eat the actor's share of the norm
+    named = list(agent.loss_module.named_parameters())
+    actor_params = [p for n, p in named if n.startswith("actor")]
+    critic_params = [p for n, p in named if not n.startswith("actor")]
 
     for it, td in enumerate(collector):                                             # td: [E, T], reward already shaped by the env
         expand_done(td)
+
+        if reward_fn is not None:                                                   # future-time spec: score the finished batch
+            rew = td["next", "agents", "reward"]                                    # [E, T, A, 1], native
+            rho = cfg.RHO_SCALE * reward_fn(td).unsqueeze(-1).to(rew.dtype)
+            td.set(("next", "agents", "reward"), rew + cfg.RHO_COEF * rho if mode == "mixed" else rho)
 
         inf = td["next", "agents", "info"]
         per_ep = E / (E + td["next", "done"][:, :-1].sum().item())                  # per (partial) episode, as episodes can end early
@@ -154,7 +174,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
 
             agent.optim.zero_grad()
             loss.backward()
-            gn = nn.utils.clip_grad_norm_(params, 1.0)
+            gn = torch.hypot(nn.utils.clip_grad_norm_(actor_params, 1.0),
+                             nn.utils.clip_grad_norm_(critic_params, 1.0))      # logged: total norm before clipping
 
             if not torch.isfinite(gn):
                 skipped += 1
@@ -204,14 +225,14 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, **kwarg
 
             # Save gif if cfg.EVAL_GIF == True
             if cfg.EVAL_GIF:
-                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
+                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)
 
         p_bar.update(n=frames_per_batch)
 
     collector.shutdown()
     p_bar.close()
     save_agent(agent, paths["Agent"])
-    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)       # was paths["Agent"], which overwrote the checkpoint
+    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)       # was paths["Agent"], which overwrote the checkpoint
     return history
 
 if __name__ == "__main__":
