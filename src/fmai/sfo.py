@@ -52,7 +52,7 @@ def vtan(obs):
     rel_pos = obs[..., 4:6]
     rel_vel = obs[..., 18:20]
     dist = torch.linalg.vector_norm(rel_pos, dim=-1).clamp(min=1e-6)
-    return (rel_pos[..., 0] * rel_vel[..., 1] - rel_pos[..., 1] * rel_vel[..., 0]).abs() / dist
+    return rel_pos[..., 0] * rel_vel[..., 1] - rel_pos[..., 1] * rel_vel[..., 0] / dist
 
 def vrel_err(obs, v_r=0.20):
     """Tangential speed error: | v_tan(t) - v_r |"""

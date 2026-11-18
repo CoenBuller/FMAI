@@ -296,18 +296,20 @@ class StableFlocking(BaseScenario):
         max_prox, _ = torch.max(lidar_prox, dim=-1)  # p_a(t)
         agent.r_p = torch.clamp(self.min_proximity - max_prox, max=0.0) * self.w_prox
 
-        # 3. Tangential Orbital Speed Reward: v_tan(t) = |r(t) x v_rel(t)| / ||r(t)||
+        # 3. Signed Counter-Clockwise Tangential Orbital Speed Reward
+        #    v_tan(t) = (r_x * v_rel_y - r_y * v_rel_x) / ||r(t)||  (positive = counter-clockwise orbit)
         rel_vel = agent.state.vel - self._target.state.vel
         dist = r_i.clamp(min=1e-6)
         tangential_speed = (
             rel_pos[:, 0] * rel_vel[:, 1] - rel_pos[:, 1] * rel_vel[:, 0]
-        ).abs() / dist
+        ) / dist
         tan_vel_error = (tangential_speed - self.target_rel_speed).abs()
         agent.r_v_rel = (self.epsilon_v - tan_vel_error) * self.w_v_rel
 
-        # 4. Max Velocity Reward r_v^max(t) = v_max - ||v_a(t)||
+        # 4. Max Velocity Reward: flat bonus below (v_max - 0.05), linear penalty above
+        #    Prevents -||v_a|| from canceling out +tangential_speed!
         abs_vel_norm = torch.linalg.vector_norm(agent.state.vel, dim=-1)
-        agent.r_v_max = (self.v_max - abs_vel_norm) * self.w_v_max
+        agent.r_v_max = torch.clamp(self.v_max - abs_vel_norm, max=0.05) * self.w_v_max
 
         # Total Reward: R(t) = r_v^rel(t) + r_v^max(t) + r_p(t) + r_d(t)
         agent.native_rew = agent.r_v_rel + agent.r_v_max + agent.r_p + agent.r_d
