@@ -102,12 +102,8 @@ def build_nav_spec():
 
 def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     """
-    SFO Specification for multi-agent flocking:
+    Normalized SFO Specification for multi-agent flocking (all predicates scaled so ideal = +1.0, threshold = 0.0):
         phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t)
-    1. Strict collision avoidance invariant: phi_c(t) = (dlidar(t) < p_t)
-    2. Strict maximum velocity invariant:    phi_v^m(t) = (||v_a(t)|| < v_max)
-    3. Bounded-time orbital band recovery:   phi_s^d(t) = Or_{i=0..tau} (|r_i(t-i) - r_t| <= eps_T)
-    4. Bounded-time tangential speed bound:  phi_s^v(t) = Or_{i=0..tau} (|v_tan(t-i) - v_r| <= eps_v)
     """
     tau   = cfg.TAU_FLOCK if cfg is not None else tau
     r_t   = cfg.TARGET_RADIUS if cfg is not None else 0.30
@@ -117,35 +113,35 @@ def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     eps_v = cfg.EPSILON_V if cfg is not None else 0.05
     v_max = cfg.V_MAX if cfg is not None else 0.55
 
-    # 1. Strict invariants: phi_c(t) and phi_v^m(t)
-    phi_c   = Pred(dlidar, "<", p_t)
-    phi_v_m = Pred(vabs, "<", v_max)
+    # 1. Normalized strict invariants: ideal = +1.0, boundary = 0.0
+    phi_c   = Pred(lambda o: dlidar(o) / p_t, "<", 1.0)
+    phi_v_m = Pred(lambda o: vabs(o) / v_max, "<", 1.0)
 
-    # 2. Bounded-time recovery for orbital distance band: phi_s^d(t) = \bigvee_{i=0}^{\tau} phi_d(t-i)
+    # 2. Normalized bounded-time recovery for orbital distance band: ideal = +1.0, edge = 0.0
     phi_d_lags = [
-        Pred(lambda o: dband_err(o, r_t), "<=", eps_t) if i == 0
-        else Defined(Pred(shift_dband_err(i, r_t), "<=", eps_t))
+        Pred(lambda o: dband_err(o, r_t) / eps_t, "<=", 1.0) if i == 0
+        else Defined(Pred(lambda o, s=i: shift_dband_err(s, r_t)(o) / eps_t, "<=", 1.0))
         for i in range(tau + 1)
     ]
     phi_s_d = Or(*phi_d_lags)
 
-    # 3. Bounded-time recovery for tangential velocity band: phi_s^v(t) = \bigvee_{i=0}^{\tau} phi_v^a(t-i)
+    # 3. Normalized bounded-time recovery for tangential velocity band: ideal = +1.0, edge = 0.0
     phi_v_lags = [
-        Pred(lambda o: vrel_err(o, v_r), "<=", eps_v) if i == 0
-        else Defined(Pred(shift_vrel_err(i, v_r), "<=", eps_v))
+        Pred(lambda o: vrel_err(o, v_r) / eps_v, "<=", 1.0) if i == 0
+        else Defined(Pred(lambda o, s=i: shift_vrel_err(s, v_r)(o) / eps_v, "<=", 1.0))
         for i in range(tau + 1)
     ]
     phi_s_v = Or(*phi_v_lags)
 
-    # Complete formula: phi_flock(t) = phi_c(t) & phi_v^m(t) & phi_s^d(t) & phi_s^v(t)
+    # Complete normalized formula: phi_flock(t) in (-inf, 1.0], satisfied iff >= 0.0
     phi_flock = And(phi_c, phi_v_m, phi_s_d, phi_s_v)
 
     desc = [
-        r"$\varphi_{\text{flock}}(t) = \varphi_c(t) \wedge \varphi_v^m(t) "
-        r"\wedge \left(\bigvee_{i=0}^{\tau} \varphi_d(t-i)\right) "
-        r"\wedge \left(\bigvee_{i=0}^{\tau} \varphi_v^a(t-i)\right)$"
+        r"$\tilde{\varphi}_{\text{flock}}(t) = \tilde{\varphi}_c(t) \wedge \tilde{\varphi}_v^m(t) "
+        r"\wedge \left(\bigvee_{i=0}^{\tau} \tilde{\varphi}_d(t-i)\right) "
+        r"\wedge \left(\bigvee_{i=0}^{\tau} \tilde{\varphi}_v^a(t-i)\right)$"
     ]
-    spec = WeightedRobustness([phi_flock], weights=None, clip=1.0)
+    spec = WeightedRobustness([phi_flock], weights=None, clip=2.0)
     spec.sub_formulas = {
         "phi_c (collision)": phi_c,
         "phi_vm (v_max)": phi_v_m,
