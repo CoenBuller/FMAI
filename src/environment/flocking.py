@@ -326,8 +326,22 @@ class StableFlocking(BaseScenario):
             dim=-1,
         )
 
+    # Replace StableFlocking.info(self, agent) with:
     def info(self, agent: Agent) -> Dict[str, Tensor]:
+        # mu1 >= 0 when inside target radial band
+        r_i = torch.linalg.vector_norm(agent.state.pos - self._target.state.pos, dim=-1)
+        mu1 = self.epsilon_t - (r_i - self.target_radius).abs()
+
+        # mu2 >= 0 when min Lidar distance >= min_proximity
+        min_lidar_dist, _ = torch.min(agent.sensors[0].measure(), dim=-1)
+        mu2 = min_lidar_dist - self.min_proximity
+        collisions = (min_lidar_dist <= 0.02).float()
+
         return {
+            "native_rew": agent.native_rew,
+            "mu1": mu1,
+            "mu2": mu2,                                                                 
+            "collisions": collisions,
             "r_d": agent.r_d,
             "r_p": agent.r_p,
             "r_v_rel": agent.r_v_rel,

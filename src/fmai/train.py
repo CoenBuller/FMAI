@@ -210,10 +210,11 @@ if __name__ == "__main__":
     import time
     from environment.environment import make_env
 
-    spec, spec_desc = build_spec()
     cfg = Config(DEVICE="cuda", MAX_STEPS=150, NUM_ENVS=30, EPISODES=90, EVAL_EPISODES=10,
                  EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, MAPPO=True, DEPTH=2, ENTROPY_COEF=1e-4,
                  REWARD_MODE="mixed", RHO_COEF=1.0, RUN_ID=time.strftime("%Y%m%d_%H%M%S"))
+    spec, spec_desc = build_spec(scenario=cfg.SCENARIO)
+
     env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec, mode=cfg.REWARD_MODE, window=W)
     eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)
     torch.manual_seed(cfg.SEED)

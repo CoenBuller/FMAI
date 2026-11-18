@@ -67,3 +67,10 @@ def build_nav_spec():
 
 def build_floc_spec():
     ...
+
+def build_spec(scenario: str = "flocking"):
+    if scenario == "navigation":
+        return build_nav_spec()
+    elif scenario == "flocking":
+        return build_floc_spec()
+    raise ValueError(f"Unknown scenario: {scenario}")
