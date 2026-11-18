@@ -65,8 +65,61 @@ def build_nav_spec():
     ]
     return WeightedRobustness([phi], weights=None, clip=1.0), desc
 
-def build_floc_spec():
-    ...
+def dband_err(obs, r_t=0.3):
+    """Distance deviation from the target orbit radius r_t: | ||pos_a - pos_t|| - r_t |"""
+    return (dgoal(obs) - r_t).abs()
+
+def vband(s, r_t=0.3):
+    """Band progress: dband_err(t-s) - dband_err(t) > 0 (moving closer to target radius r_t)"""
+    return lambda o: lag(dband_err(o, r_t), s, o[..., 0, -1]) - dband_err(o, r_t)
+
+def vrel_err(obs, target_rel_speed=0.25):
+    """Deviation from steady relative speed: | ||v_a - v_t|| - target_rel_speed |"""
+    rel_speed = torch.linalg.vector_norm(obs[..., 18:20], dim=-1)
+    return (rel_speed - target_rel_speed).abs()
+
+def vabs(obs):
+    """Absolute agent speed: ||v_a||"""
+    return torch.linalg.vector_norm(obs[..., 2:4], dim=-1)
+
+
+def build_floc_spec(r_t=0.3, eps_t=0.05, target_rel_speed=0.25, eps_v=0.05, v_max=0.5):
+    """
+    CNF Specification for flocking environment:
+    1. Band & steady relative speed maintenance/progress when safely spaced
+    2. Spacing recovery or active avoidance: da(t) | da(t-1..t-TAU2) | va(1..TAU2)
+    3. Hard safety (never critical proximity < 0.8 and never overspeeding <= v_max)
+    """
+    in_band  = Pred(lambda o: dband_err(o, r_t), "<=", eps_t)                  # Inside target distance band
+    in_vrel  = Pred(lambda o: vrel_err(o, target_rel_speed), "<=", eps_v)      # Maintaining steady relative velocity
+    dg       = And(in_band, in_vrel)                                           # Goal state: in band AND steady rel speed
+
+    da       = Pred(dlidar, "<", 0.2)                                          # Well-spaced now (proximity < 0.2)
+    dap      = Pred(dlidar, "<", 0.8)                                          # Never in critical proximity (< 0.8)
+    vmax_ok  = Pred(vabs, "<=", v_max)                                         # Staying under absolute max velocity
+    sda1     = Pred(shift_dlidar(TAU1), "<", 0.2)                              # Well-spaced TAU1 steps ago
+
+    # Progress toward the target band over [1, TAU1]
+    vg = [Defined(Pred(vband(s, r_t), ">", 0.0)) for s in range(1, 1 + TAU1)]
+
+    # Well-spaced in the past [1, TAU2] OR actively reducing proximity over [1, TAU2]
+    past_da = [Defined(Pred(shift_dlidar(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
+    va      = [Defined(Pred(vlidar(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
+
+    phi = And(
+        Or(Defined(Not(sda1)), Not(da), dg, *vg),
+        Or(da, *past_da, *va),
+        dap,
+        vmax_ok,
+    )
+
+    desc = [
+        r"$\forall t: (\neg da(t-\tau_1) \vee \neg da(t) \vee (d_{\text{band}}(t) \wedge v_{\text{rel}}(t)) \vee v_{\text{band}}(t)) "
+        r"\wedge (\bigvee_{s=0}^{\tau_2} da(t-s) \vee \bigvee_{s=1}^{\tau_2} v_a(t,s)) "
+        r"\wedge d_a^{+}(t) \wedge v_{\max}(t)$"
+    ]
+    return WeightedRobustness([phi], weights=None, clip=1.0), desc
+
 
 def build_spec(scenario: str = "flocking"):
     if scenario == "navigation":

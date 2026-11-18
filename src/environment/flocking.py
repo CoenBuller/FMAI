@@ -275,6 +275,10 @@ class StableFlocking(BaseScenario):
                 occupied_positions=target_pos.unsqueeze(1),
             )
 
+    def get_lidar_proximity(self, agent: Agent) -> Tensor:
+        """Returns normalized Lidar proximity in [0, 1]: 0 = clear, 1 = touching."""
+        return 1.0 - (agent.sensors[0].measure() / self.lidar_max_range)
+
     def reward(self, agent: Agent):
         is_first = self.world.policy_agents.index(agent) == 0
         if is_first:
@@ -295,10 +299,13 @@ class StableFlocking(BaseScenario):
         else:
             agent.r_d = (self.epsilon_t - radial_error) * self.w_dist
 
-        # 2. Lidar-based proximity penalty r_p(t)
-        lidar_readings = agent.sensors[0].measure()
-        min_lidar_dist, _ = torch.min(lidar_readings, dim=-1)  # p_a(t)
-        agent.r_p = torch.clamp(min_lidar_dist - self.min_proximity, max=0.0) * self.w_prox
+        # 2. Lidar-based proximity penalty r_p(t) = p_t - p_a(t)
+        #    p_a(t) is the max proximity reading in [0, 1].
+        #    Note: min_proximity (p_t) is now a proximity threshold in [0, 1] (e.g. 0.2),
+        #    matching your PDF formula r_p(t) = p_t - p_a(t) directly!
+        lidar_prox = self.get_lidar_proximity(agent)
+        max_prox, _ = torch.max(lidar_prox, dim=-1)  # p_a(t)
+        agent.r_p = torch.clamp(self.min_proximity - max_prox, max=0.0) * self.w_prox
 
         # 3. Steady Relative Velocity Reward r_v^rel(t) = epsilon_v - | ||v_a(t) - v_t(t)|| - target_rel_speed |
         rel_vel_norm = torch.linalg.vector_norm(
@@ -312,36 +319,34 @@ class StableFlocking(BaseScenario):
         agent.r_v_max = (self.v_max - abs_vel_norm) * self.w_v_max
 
         # Total Reward: R(t) = r_v^rel(t) + r_v^max(t) + r_p(t) + r_d(t)
-        return agent.r_v_rel + agent.r_v_max + agent.r_p + agent.r_d
+        agent.native_rew = agent.r_v_rel + agent.r_v_max + agent.r_p + agent.r_d
+        return agent.native_rew
 
     def observation(self, agent: Agent):
         return torch.cat(
             [
                 agent.state.pos,                          # [0:2]
                 agent.state.vel,                          # [2:4]
-                agent.state.pos - self._target.state.pos, # [4:6]
-                agent.state.vel - self._target.state.vel, # [6:8]
-                self.get_wind_at(agent),                  # [8:10]
-                agent.sensors[0].measure(),               # [10:10+n_lidar_rays]
+                agent.state.pos - self._target.state.pos, # [4:6]   -> matches dgoal(obs) in sfo.py
+                self.get_lidar_proximity(agent),          # [6:18]  -> matches dlidar(obs) in sfo.py
+                agent.state.vel - self._target.state.vel, # [18:20] -> relative velocity to target
+                self.get_wind_at(agent),                  # [20:22] -> local wind
             ],
             dim=-1,
         )
 
-    # Replace StableFlocking.info(self, agent) with:
     def info(self, agent: Agent) -> Dict[str, Tensor]:
-        # mu1 >= 0 when inside target radial band
         r_i = torch.linalg.vector_norm(agent.state.pos - self._target.state.pos, dim=-1)
         mu1 = self.epsilon_t - (r_i - self.target_radius).abs()
 
-        # mu2 >= 0 when min Lidar distance >= min_proximity
-        min_lidar_dist, _ = torch.min(agent.sensors[0].measure(), dim=-1)
-        mu2 = min_lidar_dist - self.min_proximity
-        collisions = (min_lidar_dist <= 0.02).float()
+        max_prox, _ = torch.max(self.get_lidar_proximity(agent), dim=-1)
+        mu2 = self.min_proximity - max_prox
+        collisions = (max_prox >= 0.8).float()
 
         return {
             "native_rew": agent.native_rew,
             "mu1": mu1,
-            "mu2": mu2,                                                                 
+            "mu2": mu2,
             "collisions": collisions,
             "r_d": agent.r_d,
             "r_p": agent.r_p,
@@ -369,7 +374,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         closest_point_on_circ_normal = torch.stack(
             [radial_from_origin[:, Y], -radial_from_origin[:, X]], dim=1
         )
-        normal_norm = torch.linalg.norm(
+        normal_norm = torch.linalg.norm( 
             closest_point_on_circ_normal, dim=1, keepdim=True
         ).clamp(min=1e-6)
         closest_point_on_circ_normal = (closest_point_on_circ_normal / normal_norm) * 0.1
