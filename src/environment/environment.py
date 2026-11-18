@@ -60,15 +60,25 @@ class RobustnessReward(Transform):
 
 def make_env(
     cfg,
-    num_envs, 
-    seed, 
+    num_envs=None,
+    seed=None,
     spec=None, 
-    mode="none", 
-    window=5
+    mode=None,
+    window=None
     ):
 
     """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
+
+    # Use Config defaults while allowing callers (e.g. evaluation) to override them.
+    if num_envs is None:
+        num_envs = cfg.NUM_ENVS
+    if seed is None:
+        seed = cfg.SEED
+    if mode is None:
+        mode = cfg.REWARD_MODE
+    if window is None:
+        window = cfg.TAU_FLOCK
 
     if cfg["SCENARIO"] == "navigation":
         env = VmasEnv(
@@ -97,10 +107,13 @@ def make_env(
             seed=seed,
             n_agents=cfg.NUM_AGENTS,
             min_dist_between_entities=cfg.AGENT_DISTANCE,
+            n_lidar_rays=cfg.N_LIDAR_RAYS,
             lidar_max_range=cfg.LIDAR_MAX_RANGE,
             target_radius=cfg.TARGET_RADIUS,
             epsilon_t=cfg.EPSILON_T,
             spawn_in_band=cfg.SPAWN_IN_BAND,
+            flat_band_bonus=cfg.FLAT_BAND_BONUS,
+            observe_peers=cfg.OBSERVE_PEERS,
             min_proximity=cfg.MIN_PROXIMITY,
             target_rel_speed=cfg.TARGET_REL_SPEED,
             epsilon_v=cfg.EPSILON_V,
@@ -131,8 +144,9 @@ def make_env(
     return TransformedEnv(env, Compose(*transforms))
 
 if __name__ == "__main__":
-    from src.config import Config
-    from src.fmai.utils import *
+    from config import Config
+    from fmai.utils import *
+    from fmai.sfo import build_spec
 
     cfg = Config()
     spec, _ = build_spec()

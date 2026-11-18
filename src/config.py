@@ -28,7 +28,9 @@ class Config:
     MAX_STEPS: int = 200                                    # Episode length (200 steps = ~2 full orbits)
     CONTINUOUS_ACTIONS: bool = True                         # Continuous 2D thrust forces
     SHARED_REW: bool = False                                # Individual agent robustness by default (True if MAPPO)
-    OBSERVE_PEERS: bool = False
+    OBSERVE_PEERS: bool = False                         # Include peer Lidar readings in observations
+    N_LIDAR_RAYS: int = 12                              # Number of Lidar rays per agent
+    FLAT_BAND_BONUS: bool = False                       # Use a flat distance bonus inside the orbital band
 
     #---------------------------------- Flocking SFO Configs ------------------------#
     # 1. Geometry & Orbital Band:
@@ -43,21 +45,21 @@ class Config:
     #    With lidar_max_range = 0.35 and agent radius = 0.05, center-to-center distance eps_a = 0.20
     #    equals surface-to-surface clearance 0.10 -> normalized proximity p_t = 1 - (0.20 / 0.35) ≈ 0.45
     LIDAR_MAX_RANGE: float = 0.35
-    MIN_PROXIMITY: float = 0.45                             # p_t: max allowed normalized Lidar proximity in [0, 1]
+    MIN_PROXIMITY: float = 2/3                              # p_t: max allowed normalized Lidar proximity in [0, 1]
 
     # 3. Velocity & Target Dynamics (phi_v^m & phi_s^v):
     #    target_speed_action = 0.30 under VMAS damping (0.25) yields steady target speed v_t ≈ 0.20.
     #    v_max = v_r + eps_v^rel + v_t + 0.15 = 0.20 + 0.05 + 0.20 + 0.15 = 0.60
-    TARGET_SPEED_ACTION: float = 0.30                       # Target thrust (produces steady speed v_t ≈ 0.20)
-    TARGET_TURN_RATE: float = 0.12                          # Smooth random-walk angular drift rate
-    TARGET_BOUNDARY_MARGIN: float = 0.70                    # Soft arena boundary for target random walk
+    TARGET_SPEED_ACTION: float = 0.20                       # Target thrust (produces steady speed v_t ≈ 0.20)
+    TARGET_TURN_RATE: float = 0.15                          # Smooth random-walk angular drift rate
+    TARGET_BOUNDARY_MARGIN: float = 0.60                    # Soft arena boundary for target random walk
     TARGET_REL_SPEED: float = 0.20                          # v_r: desired steady relative speed to target
     EPSILON_V: float = 0.05                                 # epsilon_v^rel: tolerance band around v_r
     V_MAX: float = 0.60                                     # v_max: strict global speed ceiling
 
     # 4. Temporal Recovery Horizon & Wind Perturbations (phi_s^d & phi_s^v):
     TAU_FLOCK: int = 3                                      # Bounded recovery horizon tau_d = tau = 3 steps
-    WIND_STRENGTH: float = 0.06                             # Base steady wind force
+    WIND_STRENGTH: float = 0.08                             # Base steady wind force
     WIND_GUST_STRENGTH: float = 0.03                        # Spatially/temporally varying gust amplitude
     RANDOM_WIND_DIRECTION: bool = True
 

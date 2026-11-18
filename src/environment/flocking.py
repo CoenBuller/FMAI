@@ -17,11 +17,14 @@ from vmas.simulator.utils import Color, ScenarioUtils, X, Y
 
 class StableFlocking(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
+        
         n_agents = kwargs.pop("n_agents", 4)
         self._min_dist_between_entities = kwargs.pop("min_dist_between_entities", 0.15)
 
         # Lidar configuration (make sure lidar_max_range >= min_proximity)
         self.n_lidar_rays = kwargs.pop("n_lidar_rays", 12)
+        self.observe_peers = kwargs.pop("observe_peers", False)
         self.lidar_max_range = kwargs.pop("lidar_max_range", 0.35)
 
         # --- Reward & Band Parameters ---
@@ -51,19 +54,12 @@ class StableFlocking(BaseScenario):
         self.wind_gust_strength = kwargs.pop("wind_gust_strength", 0.04)
         self.random_wind_direction = kwargs.pop("random_wind_direction", True)
 
-        # Target smooth random-walk parameters
+        # Target smooth random-walk parameters        
         self.target_speed_action = kwargs.pop("target_speed_action", 0.5)
         self.target_turn_rate = kwargs.pop("target_turn_rate", 0.15)
         self.target_boundary_margin = kwargs.pop("target_boundary_margin", 0.7)
 
         ScenarioUtils.check_kwargs_consumed(kwargs)
-
-        assert (
-            self.lidar_max_range >= self.min_proximity
-        ), "lidar_max_range must be >= min_proximity so Lidar can detect violations of p_t."
-        assert (
-            self.target_radius - self.epsilon_t > 0
-        ), "target_radius - epsilon_t must be > 0 for a valid inner band boundary."
 
         self.plot_grid = True
         self.x_dim = 1
@@ -155,6 +151,7 @@ class StableFlocking(BaseScenario):
 
             # Sync target_heading with actual thrust direction so turns near boundaries stay smooth
             self.target_heading = torch.atan2(u[:, 1:2], u[:, 0:1])
+            
 
         return action_script
 
@@ -328,7 +325,7 @@ class StableFlocking(BaseScenario):
                 agent.state.pos,                          # [0:2]
                 agent.state.vel,                          # [2:4]
                 agent.state.pos - self._target.state.pos, # [4:6]   -> matches dgoal(obs) in sfo.py
-                self.get_lidar_proximity(agent),          # [6:18]  -> matches dlidar(obs) in sfo.py
+                (self.get_lidar_proximity(agent) if self.observe_peers else torch.zeros_like(self.get_lidar_proximity(agent))),  # [6:18]
                 agent.state.vel - self._target.state.vel, # [18:20] -> relative velocity to target
             ],
             dim=-1,
@@ -393,4 +390,48 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
 
 if __name__ == "__main__":
-    render_interactively(__file__, control_two_agents=True)
+    from config import Config
+    from vmas import render_interactively
+
+    cfg = Config()
+    scenario = StableFlocking()
+
+    render_interactively(
+        scenario=scenario,
+        control_two_agents=True,
+
+        # Environment configuration
+        n_agents=cfg.NUM_AGENTS,
+        min_dist_between_entities=cfg.AGENT_DISTANCE,
+
+        # Lidar
+        n_lidar_rays=cfg.N_LIDAR_RAYS,
+        lidar_max_range=cfg.LIDAR_MAX_RANGE,
+        observe_peers=cfg.OBSERVE_PEERS,
+
+        # Reward and spawning
+        target_radius=cfg.TARGET_RADIUS,
+        epsilon_t=cfg.EPSILON_T,
+        spawn_in_band=cfg.SPAWN_IN_BAND,
+        flat_band_bonus=cfg.FLAT_BAND_BONUS,
+        min_proximity=cfg.MIN_PROXIMITY,
+        target_rel_speed=cfg.TARGET_REL_SPEED,
+        epsilon_v=cfg.EPSILON_V,
+        v_max=cfg.V_MAX,
+
+        # Reward weights
+        w_dist=cfg.W_DIST,
+        w_prox=cfg.W_PROX,
+        w_v_rel=cfg.W_V_REL,
+        w_v_max=cfg.W_V_MAX,
+
+        # Wind
+        wind_strength=cfg.WIND_STRENGTH,
+        wind_gust_strength=cfg.WIND_GUST_STRENGTH,
+        random_wind_direction=cfg.RANDOM_WIND_DIRECTION,
+
+        # Target
+        target_speed_action=cfg.TARGET_SPEED_ACTION,
+        target_turn_rate=cfg.TARGET_TURN_RATE,
+        target_boundary_margin=cfg.TARGET_BOUNDARY_MARGIN,
+    )
