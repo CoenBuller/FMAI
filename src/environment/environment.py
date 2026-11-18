@@ -9,7 +9,7 @@ from navigation_sfo import NavigationSFO
 from vmas.scenarios.navigation import Scenario
 from vmas.simulator.core import Agent
 
-from environment.flocking ipmort StableFlocking
+from environment.flocking import StableFlocking
 
 class RobustnessReward(Transform):
     """Adds the team robustness of `spec` to the reward at every step, computed on the GPU inside the env.
@@ -88,7 +88,7 @@ def make_env(
             mu2_cap=0.2,
         )
 
-   elif cfg["SCENARIO"] == "flocking":
+    elif cfg["SCENARIO"] == "flocking":
         env = VmasEnv(
             scenario=StableFlocking(),
             num_envs=num_envs,

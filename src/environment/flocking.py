@@ -176,7 +176,7 @@ class StableFlocking(BaseScenario):
             return
         agent.action.u = agent.action.u + self.get_wind_at(agent)
 
-    def _spawn_agents_in_band(self, target_pos: Tensor, env_index: int = None):
+    def _spawn_agents_in_band(self, target_pos: Tensor, env_index: int | None = None):
         """Spawns policy agents inside [target_radius - epsilon_t, target_radius + epsilon_t] around target_pos."""
         n_agents = len(self.world.policy_agents)
         batch_size = 1 if env_index is not None else self.world.batch_dim
@@ -212,7 +212,7 @@ class StableFlocking(BaseScenario):
             agent_pos = target_pos + offsets[:, idx, :]
             agent.set_pos(agent_pos, batch_index=env_index)
 
-    def reset_world_at(self, env_index: int = None):
+    def reset_world_at(self, env_index: int | None = None):
         if env_index is None:
             self.t = torch.zeros(self.world.batch_dim, device=self.world.device)
             self.target_heading = (
