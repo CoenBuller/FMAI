@@ -238,8 +238,8 @@ def plot_flocking(folders: list[str]):
     ax[3].tick_params(axis="both", which="major", labelsize=marker_size)
     ax[3].grid(True, axis="y", alpha=0.4)
 
-    ax[2].set_xticklabels(bar_labels, fontweight="bold")
-    ax[3].set_xticklabels(bar_labels, fontweight="bold")
+    ax[2].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
+    ax[3].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
     plt.savefig("test.png", bbox_inches="tight", dpi=200)
 
         
