@@ -1,7 +1,7 @@
 modes: ["rho", "none"]
 
 config:
-  RESULTS_DIR: "results/flocking_sfo"
+  RESULTS_DIR: "results/"
   SCENARIO: "flocking"
   DEVICE: "cuda"
   SEED: 1

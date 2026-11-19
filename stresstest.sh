@@ -1,13 +1,13 @@
 #!/bin/bash
 
-RESULTS_DIR="${RESULTS_DIR:-results}"
-SEEDS="${SEEDS:-30 31 32 33 34}"
-MODES="${MODES:-rho none}"
-MAPPO="${MAPPO:-False}"
-N_AGENTS="${N_AGENTS:-4 5 6}"
-WIND_TRAINED="${WIND_TRAINED:-True False}"
-WIND_STRENGTH="${WIND_STRENGTH:-0.17 0.19 0.22 0.25}"
-WIND_GUSTS="${WIND_GUSTS:-0.17 0.19 0.22 0.25}"
+RESULTS_DIR="results"
+SEEDS="30 31 32 33 34"
+MODES="rho none"
+MAPPO="False"
+N_AGENTS="4 5 6"
+WIND_TRAINED="True False"
+WIND_STRENGTH="0.17 0.19 0.22 0.25"
+WIND_GUSTS="0.17 0.19 0.22 0.25"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
