@@ -1,18 +1,19 @@
 import time, yaml, dataclasses, torch
 import argparse
 import warnings
+import os
+import json
+
 # Ignore those suckers
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 from environment.environment import make_env
-from fmai.train import train
+from fmai.train import train, evaluate
 from fmai.agents import Agent
 from fmai.sfo import build_spec, TAU2, TAU1
 from config import Config
-
-from torchrl.envs.libs.vmas import VmasEnv
 
 
 def str_to_bool(v):
@@ -40,6 +41,9 @@ def parse_args():
     parser.add_argument("--results_dir", type=str, default=None)
     parser.add_argument("--wind_strength", type=float, default=None)
     parser.add_argument("--wind_gust_strength", type=float, default=None)
+    parser.add_argument("--train", type=str_to_bool, default=False)
+    parser.add_argument("--mode", type=str, default=None)
+    parser.add_argument("--wind_trained", type=str_to_bool, default=True)
     return parser.parse_args()
 
 def load_experiment(path="experiment.yaml"):
@@ -77,7 +81,9 @@ def cli_overrides(args):
     if args.wind_strength is not None:
         overrides["WIND_STRENGTH"] = args.wind_strength
     if args.wind_gust_strength is not None:
-        overrides["WIND_GUST_STRENGTH"] = args.wind_strength
+        overrides["WIND_GUST_STRENGTH"] = args.wind_gust_strength
+    if args.mode is not None:
+        overrides["REWARD_MODE"] = args.mode
     return overrides
 
 def run_all(args, path="experiment.yaml"):
@@ -118,7 +124,89 @@ def run_all(args, path="experiment.yaml"):
             env=env, eval_env=eval_env, agent=agent, spec=spec, spec_desc=spec_desc, cfg=cfg
         )
 
+
+
+def stresstest(
+    mode: str,
+    seed: int,
+    wind: bool,
+    path: str,
+    args,
+    ):
+    e = load_experiment(path=path)
+    overwrites = cli_overrides(args=args)
+
+    merged_cfg = {**e["config"], **overwrites, "SEED": seed, "REWARD_MODE": mode}
+    cfg = Config(**merged_cfg)
+
+    spec, spec_desc = build_spec(cfg)
+    window = cfg.TAU_FLOCK if cfg.SCENARIO == "flocking" else (TAU1 + TAU2)
+    device = cfg.DEVICE
+
+    testing_env = make_env(
+        cfg=cfg,
+        num_envs=cfg.EVAL_EPISODES,
+        seed=seed + 1000,
+        spec=None,
+        mode="none",
+        window=window,
+    )
+
+    agent = Agent()
+    agent.make_agent(env=testing_env, cfg=cfg)
+    agent.policy.to(device)  # type: ignore
+
+    base_dir = "results/flocking_wind" if wind else "results/flocking"
+    agents_dir = os.path.join(base_dir, f"seed_{seed}", "agents")
+    timestamps = sorted([
+        t
+        for t in os.listdir(agents_dir)
+        if os.path.isdir(os.path.join(agents_dir, t))
+    ])
+    assert timestamps, f"No timestamp directories found in {agents_dir}"
+
+    agent_path = os.path.join(agents_dir, timestamps[-1], f"flocking_{mode}_seed{seed}.pt")
+    assert os.path.exists(agent_path), f"Given path does not exist. Path: {agent_path}"
+
+    checkpoint = torch.load(f=agent_path, map_location=device, weights_only=True)
+    agent.policy.load_state_dict(checkpoint["policy"])  # type: ignore
+    agent.policy.eval()  # type: ignore
+
+    info = evaluate(
+        eval_env=testing_env,
+        agent=agent,
+        spec=spec,
+        cfg=cfg,
+        training_episode=0,
+    )
+    return info, cfg, spec_desc
+
+
 if __name__ == "__main__":
-    args = parse_args()
-    path = f"src/experiments/{args.exp}"
+  args = parse_args()
+  path = f"src/experiments/{args.exp}"
+
+  if args.train:
     run_all(args, path=path)
+  else:
+    info, cfg, spec_desc = stresstest(seed=args.seed, mode=args.mode, wind=args.wind_trained, path=path, args=args)
+
+    out_dir = os.path.join(cfg.RESULTS_DIR, "stresstest", f"seed_{cfg.SEED}" )
+    os.makedirs(out_dir, exist_ok=True)
+    train_tag = "windtrained" if args.wind_trained else "nowindtrained"
+    out_file = os.path.join(
+        out_dir,
+        f"{cfg.REWARD_MODE}_{train_tag}_n{cfg.NUM_AGENTS}_wind_{cfg.WIND_STRENGTH}_gust_{cfg.WIND_GUST_STRENGTH}.json",
+        )
+    
+    with open(out_file, "w") as f:
+        json.dump(
+            {"config": vars(cfg), "formulas": spec_desc, "history": [info]},
+            f,
+            indent=2,
+        )
+    print(
+        f"[Done] mode={cfg.REWARD_MODE}, seed={cfg.SEED}, n_agents={cfg.NUM_AGENTS} ->"
+        f" pass_rate={info['pass_rate']:.2f},"
+        f" return={info['return_mean']:.2f}"
+    )
