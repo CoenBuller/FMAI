@@ -3,8 +3,8 @@ import os
 import json
 import numpy as np
 
-from typing import Any
 from matplotlib.gridspec import GridSpec
+
 def get_jsons(folder, mode: str = "none"):
     # Filter to ensure you only grab actual 'seed_' directories (ignores .DS_Store, etc.)
     paths = []
@@ -103,10 +103,6 @@ def aggregate_reward_mode(base_folder: str, reward_mode: str) -> dict:
     }
 
     return agg_dict
-
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-import numpy as np
 
 
 def plot_flocking(folders: list[str]):
