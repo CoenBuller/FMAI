@@ -131,9 +131,9 @@ def plot_flocking(folders: list[str]):
     # Cohesive color palette across line plots and bar plots
     spec_labels = {
         "phi_c (collision)": r"$\varphi_c$ (collision)",
-        "phi_vm (v_max)": r"$\varphi_{vm}$ (v$_{max}$)",
-        "phi_sd (dist_band)": r"$\varphi_{sd}$ (dist. band)",
-        "phi_sv (tan_speed)": r"$\varphi_{sv}$ (tang. speed)",
+        "phi_vm (v_max)": r"$\varphi_{v_m}$ (v$_{max}$)",
+        "phi_sd (dist_band)": r"$\varphi_{s_d}$ (dist. band)",
+        "phi_sv (tan_speed)": r"$\varphi_{s_v}$ (tang. speed)",
     }
     spec_colors = {
         "phi_c (collision)": "#2b5c8f",  # Deep steel blue
@@ -236,8 +236,8 @@ def plot_flocking(folders: list[str]):
 
     ax[2].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
     ax[3].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
-    plt.savefig("windy_flocking.png", bbox_inches="tight", dpi=200)
+    plt.savefig("flocking.png", bbox_inches="tight", dpi=200)
 
         
 if __name__ == "__main__":
-    plot_flocking(["results/flocking_wind"])    
+    plot_flocking(["results/flocking"])    
