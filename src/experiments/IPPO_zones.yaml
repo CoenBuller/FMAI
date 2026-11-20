@@ -1,4 +1,4 @@
-modes: [none, mixed:zone, rho:zone]
+modes: [none, rho:gated3]
 
 # passed straight into the Config dataclass (field names must match)
 config:

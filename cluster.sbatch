@@ -12,12 +12,12 @@
 set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
-EXPERIMENTS="IPPO_zones.yaml MAPPO_zones.yaml"         # files in src/experiments/ (danger zones + inertia)
-MODES="none mixed:zone rho:zone"                       # none | rho[:spec] | mixed[:spec]
+EXPERIMENTS="IPPO_zones.yaml"                         # files in src/experiments/ (danger zones + inertia)
+MODES="rho:gated3"                                     # none | rho[:spec] | mixed[:spec]
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA="--no-early-stop"                                # flags for every run, e.g. "--steps 2000000 --agents 4"
-MAX_PARALLEL=18                                        # runs at once on the GPU (30 at once ran out of its 44 GB)
+MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
 # Code, venv and uv cache on the node's local disk (/home quota is small); results on /data, so they are

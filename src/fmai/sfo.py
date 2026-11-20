@@ -54,8 +54,15 @@ def vagent(s):
 
 
 def build_spec(spec_type):
-    if spec_type in ("future", "zone"):                      # scored after the rollout, see FutureSpec / ZoneSpec
-        spec = FutureSpec() if spec_type == "future" else ZoneSpec()
+    if spec_type in ("future", "zone", "gated", "gated2", "gated3"):   # scored after the rollout (FutureSpec / ZoneSpec / GatedSpec)
+        spec = {"future": FutureSpec, "zone": ZoneSpec, "gated": GatedSpec,
+                # gated2: zone robustness 0 exactly at the zone edge, no look-ahead (the critic learns to anticipate),
+                # -1 already 0.1 inside the edge; standing still is negative (Prog 0 at v_min = 0.01/step = kappa/tau_prog)
+                "gated2": lambda: GatedSpec(v_min=0.01, m_z=0.0, tau_zone=0, zone_depth=0.1),
+                # gated3: gated2 with horizon 1 everywhere: every term scores the state the action leads to (t+1),
+                # Prog = the progress the action made; anticipation is left to the critic (GAE)
+                "gated3": lambda: GatedSpec(v_min=0.01, m_z=0.0, tau_zone=0, zone_depth=0.1, tau_safe=0,
+                                            one_step=True)}[spec_type]()
         return spec, spec.desc()
     if spec_type == "coen":
         """
@@ -270,4 +277,104 @@ class ZoneSpec(FutureSpec):
             rf"\tau_{{rec}} = {self.tau_rec},\ d_{{safe}} = {self.d_safe},\ d_{{crit}} = {self.d_crit},\ "
             rf"\tau_{{zone}} = {self.tau_zone},\ r_k = {self.zone_r},\ m_z = {self.m_z},\ s = {self.prog_scale},\ "
             rf"b = {self.band}$",
+        ]
+
+
+class GatedSpec(ZoneSpec):
+    """Two-part ("gated") robustness reward, every term piecewise linear in [-1, 1]
+    (1 = best achievable, 0 = about to violate, -1 = worst violation):
+         Prog_i(t)  = h((d_i(t) - d_i(t+T)) / T),  T = min(tau_prog, t_end - t);  1 if within eps_g of the goal at t+T
+                      h: -1 at -v_max (full speed away), 0 at v_min, 1 at v_max (full speed towards the goal);
+                      v_min > 0 makes standing still negative
+         Agent_i(t) = min_{u in [0, tau_safe]} min_{j != i} f(d_ij(t+u)),  f: 1 at >= d_far, 0 at d_safe, -1 at d_crit
+         Zone_i(t)  = min_{u in [0, tau_zone]} min_k  g(|p_i - z_k| - r)(t+u),  g: 1 at >= zone_far from the edge,
+                      0 at m_z outside the edge, -1 at zone_depth inside the edge (default: the zone centre)
+         rho_i(t)   = Prog_i(t)                        if Agent_i, Zone_i, Prog_i >= 0   (safe: go fast)
+                      min(Prog_i, Agent_i, Zone_i)     otherwise                         (worst violation is the signal)"""
+
+    def __init__(self, v_max=0.039, v_min=0.0, tau_safe=5, d_far=0.6, zone_far=0.6, zone_depth=None, one_step=False,
+                 **kw):
+        # v_max: measured top speed per step with AGENT_MASS 2.5, DRAG 0.1 (full thrust, ~0.039 after ~50 steps)
+        # one_step: Prog = progress made by the action itself, d_i(before) - d_i(after) (horizon 1, no future window);
+        # combine with tau_safe = tau_zone = 0 so every term only scores the state the action leads to
+        super().__init__(**kw)
+        self.v_max, self.v_min, self.tau_safe, self.d_far, self.zone_far = v_max, v_min, tau_safe, d_far, zone_far
+        self.zone_depth = self.zone_r if zone_depth is None else zone_depth
+        self.one_step = one_step
+
+    @staticmethod
+    def _pw(x, neg, zero, pos):
+        """Piecewise linear: -1 at x = neg, 0 at x = zero, 1 at x = pos (clipped outside)."""
+        return torch.where(x >= zero, (x - zero) / (pos - zero), (x - zero) / (zero - neg)).clamp(-1.0, 1.0)
+
+    @staticmethod
+    def _future_min(x, tau, seg):
+        out = x
+        for u in range(1, tau + 1):
+            fut = lead(x, u, seg)
+            out = torch.where(torch.isnan(fut), out, torch.minimum(out, fut))
+        return out
+
+    @torch.no_grad()
+    def terms(self, pos, goal, done, zones=None, pos_prev=None):
+        """pos: positions after each step's action; pos_prev: before it (only needed with one_step)."""
+        d = done.reshape(done.shape[0], done.shape[1]).long()
+        seg = d.cumsum(1) - d
+        dg = torch.linalg.vector_norm(pos - goal, dim=-1)                                 # [E, T, A]
+        A = pos.shape[2]
+        dij = torch.cdist(pos, pos) + torch.diag(torch.full((A,), float("inf"), device=pos.device))
+
+        at_goal = lambda x: x <= self.eps_g
+        if self.one_step:                                                                  # progress of this action
+            step = torch.linalg.vector_norm(pos_prev - goal, dim=-1) - dg
+            prog = torch.where(at_goal(dg), torch.ones_like(dg), self._pw(step, -self.v_max, self.v_min, self.v_max))
+        else:
+            prog = at_goal(dg).float()                                                     # no window left: 1 at goal, else 0
+            for u in range(1, self.tau_prog + 1):                                          # keep the longest available window
+                fut = lead(dg, u, seg)
+                val = self._pw((dg - fut) / u, -self.v_max, self.v_min, self.v_max)
+                val = torch.where(at_goal(fut), torch.ones_like(val), val)
+                prog = torch.where(torch.isnan(fut), prog, val)
+
+        agent = self._future_min(self._pw(dij.amin(dim=-1), self.d_crit, self.d_safe, self.d_far), self.tau_safe, seg)
+
+        if zones is None:
+            zone = torch.ones_like(dg)
+        else:
+            edge = (torch.linalg.vector_norm(pos[..., :, None, :] - zones[..., None, :, :], dim=-1)
+                    - self.zone_r).amin(dim=-1)                                            # signed distance to nearest zone edge
+            zone = self._future_min(self._pw(edge, -self.zone_depth, self.m_z, self.zone_far), self.tau_zone, seg)
+
+        worst = torch.minimum(prog, torch.minimum(agent, zone))
+        total = torch.where(worst < 0, worst, prog)
+        return {"prog": prog, "agent": agent, "zone": zone, "worst": worst, "total": total}
+
+    def reward(self, td):
+        inf = td["next", "agents", "info"]
+        zones = inf["zones"][..., 0, :, :] if "zones" in inf.keys() else None
+        pos_prev = td["agents", "info", "pos"] if self.one_step else None                 # root info = state before the action
+        return self.terms(inf["pos"], inf["goal"], td["next", "done"], zones, pos_prev)["total"]
+
+    def desc(self):
+        if self.one_step:
+            return [
+                r"$\rho_{Prog_i}(t) = h(d_i(t) - d_i(t+1))$, $h$: $-1@-v_{max},\ 0@v_{min},\ 1@v_{max}$ (1 at goal)",
+                r"$\rho_{Agent_i}(t) = f(\min_{j \neq i} d_{ij}(t+1))$, $f$: $-1@d_{crit},\ 0@d_{safe},\ 1@d_{far}$",
+                r"$\rho_{Zone_i}(t) = g(\min_k \lVert p_i(t+1) - z_k \rVert - r)$, $g$: $-1@-\delta_z,\ 0@m_z,\ 1@z_{far}$",
+                r"$\rho_i = \rho_{Prog_i}$ if $\min(\cdot) \geq 0$, else $\min(\rho_{Prog_i}, \rho_{Agent_i}, \rho_{Zone_i})$",
+                rf"$v_{{max}} = {self.v_max},\ v_{{min}} = {self.v_min},\ d_{{crit}} = {self.d_crit},\ "
+                rf"d_{{safe}} = {self.d_safe},\ d_{{far}} = {self.d_far},\ \delta_z = {self.zone_depth},\ m_z = {self.m_z},\ "
+                rf"z_{{far}} = {self.zone_far}$",
+            ]
+        return [
+            r"$\rho_{Prog_i}(t) = h((d_i(t) - d_i(t+\tilde\tau_{prog})) / \tilde\tau_{prog})$, "
+            r"$h$: $-1@-v_{max},\ 0@v_{min},\ 1@v_{max}$ (1 at goal)",
+            r"$\rho_{Agent_i}(t) = \min_{u \in [0,\tau_{safe}]} f(\min_{j \neq i} d_{ij}(t+u))$, "
+            r"$f$: $-1@d_{crit},\ 0@d_{safe},\ 1@d_{far}$",
+            r"$\rho_{Zone_i}(t) = \min_{u \in [0,\tau_{zone}]} g(\min_k \lVert p_i - z_k \rVert - r)$, "
+            r"$g$: $-1@-\delta_z,\ 0@m_z,\ 1@z_{far}$",
+            r"$\rho_i = \rho_{Prog_i}$ if $\min(\cdot) \geq 0$, else $\min(\rho_{Prog_i}, \rho_{Agent_i}, \rho_{Zone_i})$",
+            rf"$v_{{max}} = {self.v_max},\ v_{{min}} = {self.v_min},\ \delta_z = {self.zone_depth},\ \tau_{{prog}} = {self.tau_prog},\ \tau_{{safe}} = {self.tau_safe},\ "
+            rf"\tau_{{zone}} = {self.tau_zone},\ d_{{crit}} = {self.d_crit},\ d_{{safe}} = {self.d_safe},\ "
+            rf"d_{{far}} = {self.d_far},\ r = {self.zone_r},\ m_z = {self.m_z},\ z_{{far}} = {self.zone_far}$",
         ]
