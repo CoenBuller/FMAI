@@ -1,7 +1,6 @@
 modes:
   - "none"
   - "rho"
-  - "mixed"
 
 config:
   RESULTS_DIR: "results/flocking_sfo"
@@ -37,7 +36,7 @@ config:
   V_MAX: 0.55
 
   # Temporal Recovery & Wind
-  TAU_FLOCK: 4
+  TAU_FLOCK: 1
   WIND_STRENGTH: 0
   WIND_GUST_STRENGTH: 0
   RANDOM_WIND_DIRECTION: true

@@ -1,9 +1,9 @@
-#!/bin/bash 
+#!/bin/bash
 
-RESULTS_DIR="${RESULTS_DIR:-results/flocking_wind}"
-SEEDS="${SEEDS:-30 31 32 33 34}"
-MAPPO="${MAPPO:-False}"
-N_AGENTS="${N_AGENTS:-3}"
+RESULTS_DIR="results_2/flocking_wind"
+SEEDS="30 31 32 33 34"
+MAPPO="False"
+N_AGENTS="3"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -25,6 +25,7 @@ run_one() {
         --mappo "$mappo" \
         --n_agents "$n_agents" \
         --seed "$seed" \
+        --train "true" \
         --results_dir "$results" 2>&1 | tee "$log"
 }
 
