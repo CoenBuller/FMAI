@@ -280,8 +280,8 @@ def print_compact_summary(raw_df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    root_dir = "results/images"
-    raw_df, agg_df = load_stresstest_results("results/stresstest")
+    root_dir = "results_2/images"
+    raw_df, agg_df = load_stresstest_results("results_2/stresstest")
     print_compact_summary(raw_df)
     os.makedirs(root_dir, exist_ok=True)
 

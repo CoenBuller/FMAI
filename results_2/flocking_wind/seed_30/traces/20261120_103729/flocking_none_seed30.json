@@ -228,6 +228,307 @@
       "train_return": -3.607994556427002,
       "train_reward": -3.607994556427002,
       "skipped_updates": 0
+    },
+    {
+      "episode": 2000,
+      "step": 400000,
+      "return_mean": 16.964101791381836,
+      "return_std": 1.430404782295227,
+      "return_agent_std": 0.5514933466911316,
+      "rho_mean": -1.0904110670089722,
+      "rho_std": 0.23120653629302979,
+      "pass_rate": 0.0,
+      "native_return": 16.964101791381836,
+      "success_rate": 0.6100000143051147,
+      "violation_rate": 0.0,
+      "min_separation": 0.66464763879776,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 4.662299156188965,
+        "r_p": 0.0,
+        "r_v_rel": 2.301802635192871,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.7292954325675964,
+        "phi_vm (v_max)": 0.3502885401248932,
+        "phi_sd (dist_band)": -0.6268013119697571,
+        "phi_sv (tan_speed)": -1.075212836265564
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.9699999690055847,
+        "phi_sv (tan_speed)": 1.0
+      },
+      "loss_total": 0.061731193386591394,
+      "loss_objective": -0.015790669030398448,
+      "loss_critic": 0.0775755738791747,
+      "loss_entropy": -5.371113067480903e-05,
+      "entropy": 0.5371113253709597,
+      "kl_approx": 0.013441025616227236,
+      "grad_norm": 1.3289261855376073,
+      "train_return": 11.52340030670166,
+      "train_reward": 11.52340030670166,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 2500,
+      "step": 500000,
+      "return_mean": 22.60427474975586,
+      "return_std": 0.5730232000350952,
+      "return_agent_std": 0.37108537554740906,
+      "rho_mean": -0.42082679271698,
+      "rho_std": 0.23012833297252655,
+      "pass_rate": 0.0,
+      "native_return": 22.60427474975586,
+      "success_rate": 0.9300000071525574,
+      "violation_rate": 0.0,
+      "min_separation": 0.7229293584823608,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 7.314505577087402,
+        "r_p": 0.0,
+        "r_v_rel": 5.289769172668457,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.8458587527275085,
+        "phi_vm (v_max)": 0.39232444763183594,
+        "phi_sd (dist_band)": 0.03141583874821663,
+        "phi_sv (tan_speed)": -0.42082679271698
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.38999998569488525,
+        "phi_sv (tan_speed)": 1.0
+      },
+      "loss_total": 0.016548806361895867,
+      "loss_objective": -0.010151256880523691,
+      "loss_critic": 0.026735045834898184,
+      "loss_entropy": -3.498262775769362e-05,
+      "entropy": 0.3498262824920508,
+      "kl_approx": 0.014076176563249979,
+      "grad_norm": 1.3787460680191332,
+      "train_return": 18.41143035888672,
+      "train_reward": 18.41143035888672,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 3000,
+      "step": 600000,
+      "return_mean": 24.5031681060791,
+      "return_std": 0.5066535472869873,
+      "return_agent_std": 0.27133575081825256,
+      "rho_mean": -0.2683439552783966,
+      "rho_std": 0.2848588228225708,
+      "pass_rate": 0.11999999731779099,
+      "native_return": 24.503170013427734,
+      "success_rate": 0.9799999594688416,
+      "violation_rate": 0.0,
+      "min_separation": 0.7569536566734314,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 8.052077293395996,
+        "r_p": 0.0,
+        "r_v_rel": 6.45109224319458,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.9139072895050049,
+        "phi_vm (v_max)": 0.40749359130859375,
+        "phi_sd (dist_band)": 0.1825893670320511,
+        "phi_sv (tan_speed)": -0.2652699947357178
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.09999999403953552,
+        "phi_sv (tan_speed)": 0.85999995470047
+      },
+      "loss_total": 0.007828004725198321,
+      "loss_objective": -0.005600992972549881,
+      "loss_critic": 0.013436735231572619,
+      "loss_entropy": -7.737573520289632e-06,
+      "entropy": 0.07737573709231443,
+      "kl_approx": 0.012833538205406638,
+      "grad_norm": 1.4112065640779643,
+      "train_return": 21.434274673461914,
+      "train_reward": 21.434274673461914,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 3500,
+      "step": 700000,
+      "return_mean": 25.3271484375,
+      "return_std": 0.5323236584663391,
+      "return_agent_std": 0.2494771033525467,
+      "rho_mean": -0.13936705887317657,
+      "rho_std": 0.286772757768631,
+      "pass_rate": 0.35999998450279236,
+      "native_return": 25.327146530151367,
+      "success_rate": 1.0,
+      "violation_rate": 0.0,
+      "min_separation": 0.7771669030189514,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 8.44440746307373,
+        "r_p": 0.0,
+        "r_v_rel": 6.8827385902404785,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.9543337225914001,
+        "phi_vm (v_max)": 0.4178057909011841,
+        "phi_sd (dist_band)": 0.24374835193157196,
+        "phi_sv (tan_speed)": -0.12681566178798676
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.04999999701976776,
+        "phi_sv (tan_speed)": 0.6100000143051147
+      },
+      "loss_total": 0.003077191762354349,
+      "loss_objective": -0.005161329952671077,
+      "loss_critic": 0.008207406613450402,
+      "loss_entropy": 3.111510688354312e-05,
+      "entropy": -0.3111510741787079,
+      "kl_approx": 0.015336345238302648,
+      "grad_norm": 1.8557346887313402,
+      "train_return": 23.188142776489258,
+      "train_reward": 23.188142776489258,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 4000,
+      "step": 800000,
+      "return_mean": 26.098617553710938,
+      "return_std": 0.4916757345199585,
+      "return_agent_std": 0.22539961338043213,
+      "rho_mean": -0.053577203303575516,
+      "rho_std": 0.2918720841407776,
+      "pass_rate": 0.4899999797344208,
+      "native_return": 26.09861946105957,
+      "success_rate": 1.0,
+      "violation_rate": 0.0,
+      "min_separation": 0.7849571108818054,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 8.722329139709473,
+        "r_p": 0.0,
+        "r_v_rel": 7.376289367675781,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.9699141979217529,
+        "phi_vm (v_max)": 0.431177020072937,
+        "phi_sd (dist_band)": 0.26340606808662415,
+        "phi_sv (tan_speed)": -0.037407923489809036
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.019999999552965164,
+        "phi_sv (tan_speed)": 0.5
+      },
+      "loss_total": 0.002433960128986748,
+      "loss_objective": -0.002671140869981715,
+      "loss_critic": 0.005041404442790036,
+      "loss_entropy": 6.369652959946484e-05,
+      "entropy": -0.6369653079754267,
+      "kl_approx": 0.014634657624507478,
+      "grad_norm": 2.312979457775752,
+      "train_return": 24.326641082763672,
+      "train_reward": 24.326641082763672,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 4500,
+      "step": 900000,
+      "return_mean": 26.472822189331055,
+      "return_std": 0.4074757397174835,
+      "return_agent_std": 0.22745360434055328,
+      "rho_mean": -0.16798600554466248,
+      "rho_std": 0.4025261402130127,
+      "pass_rate": 0.5,
+      "native_return": 26.472822189331055,
+      "success_rate": 1.0,
+      "violation_rate": 0.0,
+      "min_separation": 0.7887011766433716,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 8.825639724731445,
+        "r_p": 0.0,
+        "r_v_rel": 7.647181987762451,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.9774023294448853,
+        "phi_vm (v_max)": 0.43533432483673096,
+        "phi_sd (dist_band)": 0.27183985710144043,
+        "phi_sv (tan_speed)": -0.14763009548187256
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.029999999329447746,
+        "phi_sv (tan_speed)": 0.5
+      },
+      "loss_total": 0.004667042967999945,
+      "loss_objective": 0.0007256385462233412,
+      "loss_critic": 0.003840092299744869,
+      "loss_entropy": 0.00010131210191712643,
+      "entropy": -1.013121049832075,
+      "kl_approx": 0.015897977532685584,
+      "grad_norm": 3.2707008673594546,
+      "train_return": 25.18507957458496,
+      "train_reward": 25.18507957458496,
+      "skipped_updates": 0
+    },
+    {
+      "episode": 5000,
+      "step": 1000000,
+      "return_mean": 26.749147415161133,
+      "return_std": 0.4666564464569092,
+      "return_agent_std": 0.22127440571784973,
+      "rho_mean": -0.07534658163785934,
+      "rho_std": 0.39501434564590454,
+      "pass_rate": 0.5799999833106995,
+      "native_return": 26.749147415161133,
+      "success_rate": 1.0,
+      "violation_rate": 0.0,
+      "min_separation": 0.7883760929107666,
+      "collision_steps": 0.0,
+      "reward_components": {
+        "r_d": 9.00022029876709,
+        "r_p": 0.0,
+        "r_v_rel": 7.748926162719727,
+        "r_v_max": 9.999995231628418
+      },
+      "sub_rho": {
+        "phi_c (collision)": 0.9767520427703857,
+        "phi_vm (v_max)": 0.4402482807636261,
+        "phi_sd (dist_band)": 0.30231836438179016,
+        "phi_sv (tan_speed)": -0.055395953357219696
+      },
+      "sub_fail_rate": {
+        "phi_c (collision)": 0.0,
+        "phi_vm (v_max)": 0.0,
+        "phi_sd (dist_band)": 0.009999999776482582,
+        "phi_sv (tan_speed)": 0.41999998688697815
+      },
+      "loss_total": 0.005752407549208818,
+      "loss_objective": 0.002573802915777252,
+      "loss_critic": 0.003048439796727437,
+      "loss_entropy": 0.00013016484038253577,
+      "entropy": -1.3016484294182216,
+      "kl_approx": 0.01697274918796576,
+      "grad_norm": 4.191898061373295,
+      "train_return": 25.704021453857422,
+      "train_reward": 25.704021453857422,
+      "skipped_updates": 0
     }
   ]
 }

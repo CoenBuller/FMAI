@@ -1,6 +1,6 @@
 #!/bin/bash
 
-RESULTS_DIR="results"
+RESULTS_DIR="results_2"
 SEEDS="30 31 32 33 34"
 MODES="rho none"
 MAPPO="False"

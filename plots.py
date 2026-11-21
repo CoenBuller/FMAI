@@ -236,11 +236,11 @@ def plot_flocking(folders: list[str]):
 
     ax[2].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
     ax[3].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
-    plt.savefig("results_2/images/flocking_wind.png", bbox_inches="tight", dpi=200)
+    plt.savefig("results_2/images/flocking.png", bbox_inches="tight", dpi=200)
 
 
 
 
 if __name__ == "__main__":
     os.makedirs("results_2/images", exist_ok=True)
-    plot_flocking(["results_2/flocking_wind"])    
+    plot_flocking(["results_2/flocking"])    
