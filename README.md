@@ -38,7 +38,7 @@ ssh.exe l40s 'scancel <jobid>'                                         # stop th
 
 ### Danger zones + inertia (`IPPO_zones.yaml`)
 
-An augmented Navigation (`src/navigation_sfo.py`):
+An augmented Navigation (`src/environment/navigation.py`):
 - **Danger zones:** `N_ZONES: 2` circles (`ZONE_RADIUS: 0.25`) per episode, on the straight path of random agents, never on a spawn or goal. Agents can drive through them. They see zones through a second 12-ray LiDAR (`ZONE_LIDAR_RANGE: 0.6`, appended to the observation; inside a zone every ray reads 0).
 - **Catastrophe:** each step inside a zone, with probability `CAT_PROB: 0.002` (1/500), the native reward gets `-CAT_PENALTY` (15). That is the only zone signal in the native reward. The value is balanced with scripted controllers (straight through vs around, γ = 0.99): the expected discounted catastrophe cost of crossing (about 2.8 % per crossing) roughly equals the discounted cost of the detour (about 0.36).
 - **Inertia:** `AGENT_MASS: 2.5`, `DRAG: 0.1`. Same top speed as the default (mass 1, drag 0.25), but about 26 instead of 10 steps to reach it and a coasting distance of 0.35 instead of 0.12.
@@ -125,8 +125,7 @@ uv run python -m experiments.experiment --exp stresstest.yaml --mode rho --seed 
   (wind × gusts × number of agents) and the ρ − native deltas to `comparison/stresstest/`. It also prints a summary table.
 - `python plots.py [--run-ids no_wind wind]`: sub-formula failure rates over training and final pass rate / return,
   native vs ρ, to `comparison/<run_id>/flocking.png`.
-- `gif_to_png.py`: `gif_contact_sheet(gif, out)` makes a contact sheet (a grid of frames) from a GIF, for the report.
-  The GIF path is hard-coded in the last line; edit it before running.
+- `python gif_to_png.py <gif> [out.png]`: a contact sheet (a grid of 12 frames) of a GIF, for the report.
 
 `analyze.py`, `scaling.py` and `summary.py` are built for navigation (the gated spec and zones); don't use them on
 flocking runs.

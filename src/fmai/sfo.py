@@ -2,7 +2,7 @@ import torch
 from fmai.robustness import Pred, Defined, And, Or, Not, WeightedRobustness
 
 TAU1, TAU2 = 0, 1
-TAU_FLOCK = 1  # Recovery horizon tau for flocking (matches W = TAU1 + TAU2 = 4)
+TAU_FLOCK = 1  # Recovery horizon tau for flocking when no config is given (else cfg.TAU_FLOCK)
 
 def dgoal(obs):                      
     return torch.linalg.vector_norm(obs[..., 4:6], dim=-1)

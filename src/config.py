@@ -1,4 +1,3 @@
-import math
 import torch.nn as nn
 
 from typing import Literal
@@ -8,6 +7,8 @@ from torch.nn import Tanh, ReLU, Sigmoid
 
 @dataclass
 class Config:
+    """Defaults of every setting. A run takes these, then the yaml's config: block, then the command-line flags
+    (experiment.run_all). The yamls set nearly everything, so most defaults below never take effect."""
     RESULTS_DIR: str = "results/flocking"
     SPLIT_RESULTS: bool = False                             # True: RESULTS_DIR/<native|robustness>/{agents,gifs,traces}
     DEVICE: str = "cuda"
@@ -26,8 +27,8 @@ class Config:
     #---------------------------------- Env Config ----------------------------------#
     SCENARIO: str = "flocking"
     NUM_ENVS: int = 32                                      # Parallel vectorized environments on GPU
-    NUM_AGENTS: int = 4                                     # Default swarm size (scales up to N_MAX = 6)
-    MAX_STEPS: int = 200                                    # Episode length (200 steps = ~2 full orbits)
+    NUM_AGENTS: int = 4                                     # Number of agents
+    MAX_STEPS: int = 200                                    # Episode length (the only way an episode ends)
     CONTINUOUS_ACTIONS: bool = True                         # Continuous 2D thrust forces
     SHARED_REW: bool = False                                # True: every agent gets the team reward
     OBSERVE_PEERS: bool = False                         # Include peer Lidar readings in observations
@@ -72,7 +73,7 @@ class Config:
     V_MAX: float = 0.60                                     # v_max: strict global speed ceiling
 
     # 4. Temporal Recovery Horizon & Wind Perturbations (phi_s^d & phi_s^v):
-    TAU_FLOCK: int = 3                                      # Bounded recovery horizon tau_d = tau = 3 steps
+    TAU_FLOCK: int = 3                                      # Flocking recovery horizon tau (the flocking yamls use 1)
     WIND_STRENGTH: float = 0.08                             # Base steady wind force
     WIND_GUST_STRENGTH: float = 0.03                        # Spatially/temporally varying gust amplitude
     RANDOM_WIND_DIRECTION: bool = True
@@ -114,29 +115,3 @@ class Config:
 
     def __setitem__(self, key, value):
         self.__dict__[key] = value
-
-    #---------------------------------- Retrieving variables ------------------------#
-    @property
-    def variables(self):
-        return self.get_variables()
-
-    @property
-    def attributes(self):
-        return self.get_attributes()
-
-    @property
-    def values(self):
-        return self.get_values()
-
-    def get_variables(self):
-        return {key: value for (key, value) in vars(self).items()}
-
-    def get_attributes(self):
-        return [key for (key, value) in vars(self).items()]
-
-    def get_values(self):
-        return [value for (key, value) in vars(self).items()]
-
-
-if __name__ == "__main__":
-    print(Config().variables)

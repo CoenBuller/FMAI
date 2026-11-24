@@ -4,7 +4,7 @@ from torchrl.envs import StepCounter, TransformedEnv, Compose
 from torchrl.envs.libs.vmas import VmasEnv
 from torchrl.envs.transforms import Transform
 
-from navigation_sfo import NavigationSFO
+from environment.navigation import NavigationSFO
 
 from vmas.scenarios.navigation import Scenario
 from vmas.simulator.core import Agent
@@ -88,7 +88,7 @@ def make_env(
             shared_rew=cfg.SHARED_REW,
             eps=cfg.GOAL_EPS,
             safety_distance=cfg.SAFETY_DIST,
-            n_zones=cfg.N_ZONES,                                     # danger zones + inertia (navigation_sfo.py)
+            n_zones=cfg.N_ZONES,                                     # danger zones + inertia (navigation.py)
             zone_radius=cfg.ZONE_RADIUS,
             zone_lidar_range=cfg.ZONE_LIDAR_RANGE,
             cat_prob=cfg.CAT_PROB,

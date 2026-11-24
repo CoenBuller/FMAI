@@ -1,22 +1,23 @@
-"""VMAS Navigation with SFO robustness terms. The env always gives the native reward; the robustness reward
+"""VMAS Navigation with danger zones and inertia. The env always gives the native reward; the robustness reward
 (GatedSpec in fmai/sfo.py) is computed in train() after each rollout, from the positions in info.
 
 Changes to the original scenario:
-  - agents and goals spawn at least `spawn_spacing` apart, so the separation spec is satisfiable,
-  - episodes never end early (only the time limit in train.py ends them),
-  - info reports the native reward, collisions, positions and the SFO terms, whatever reward is trained on.
+  - agents and goals spawn at least `spawn_spacing` apart, so the safety distance holds at the start,
+  - episodes never end early (only the time limit, StepCounter in environment.make_env, ends them),
+  - info reports the native reward, collisions, positions, goals and mu1-mu3, whatever reward is trained on.
 
 Optional danger zones (n_zones > 0) and inertia (agent_mass, drag):
   - n_zones circles of radius zone_radius per episode, placed on the straight spawn->goal path of randomly chosen
     agents (never on a spawn or goal). Agents can drive through them: they are not obstacles.
   - Each step inside a zone, an agent suffers a catastrophe with probability cat_prob: native reward -cat_penalty.
     There is no other signal about zones in the native reward.
-  - Agents see zones through a second LiDAR (n_lidar_rays rays, range zone_lidar_range) appended to the observation;
-    inside a zone every ray reads distance 0.
+  - Agents see zones through a second LiDAR (n_lidar_rays rays, range zone_lidar_range) appended to the observation
+    as zone_lidar_range - distance (0 = nothing in range); inside a zone every ray reads zone_lidar_range.
   - agent_mass and drag set the inertia; terminal speed scales with 1 / (mass * drag), so mass 2.5 with drag 0.1 keeps
     the default top speed (1 * 0.25) with about 2.5x the response time.
 
-Per agent i the SFO spec is   F G (mu1_i >= 0)  and  G (mu2_i >= 0)   with
+Reference spec of the evaluation (train.sfo_rho: pass rate, safety violations), the same for every reward.
+Per agent i:   F (mu1_i >= 0)  and  G (mu2_i >= 0)   with
   mu1_i = eps - |p_i - g_i|                    (goal: >= 0 when within eps of the goal)
   mu2_i = min_{j != i} |p_i - p_j| - d         (separation: >= 0 when every other agent is at least d away)
 and with zones also  G (mu3_i >= 0),  mu3_i = min_k |p_i - z_k| - r   (outside every zone).

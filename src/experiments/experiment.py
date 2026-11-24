@@ -67,7 +67,6 @@ def load_experiment(path="experiment.yaml"):
         raise KeyError(f"Not Config fields: {sorted(bad)}")
 
     return dict(
-        formula_weights=y.get("formula_weights"),   # None -> equal weights
         modes=y["modes"],
         config=y["config"],
     )
