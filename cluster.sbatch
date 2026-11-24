@@ -1,9 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=fmai-compare
 #SBATCH --partition=L40s_students
-#SBATCH --nodelist=ceratanium
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=96G
 #SBATCH --time=14:00:00
 #SBATCH --output=fmai-%j.out
@@ -19,7 +18,7 @@ SMOOTH=5                                               # moving-average window (
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
 SCALE_AGENTS="2 4 5 6 7 8"                             # zero-shot scaling test on these numbers of agents ("" = skip)
 ANALYSIS_EPISODES=20                                   # test envs per checkpoint for the robustness-over-time analysis
-MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
+MAX_PARALLEL=4                                         # runs at once on the GPU (one CPU each; 30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
 # Code, venv and uv cache on the node's local disk (/home quota is small); results on /data, so they are

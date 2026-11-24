@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copy the code to the LIACS cluster and submit cluster.sbatch (pinned to ceratanium). Run from your laptop:
+# Copy the code to the LIACS cluster and submit cluster.sbatch (any L40s node). Run from your laptop:
 #     bash submit.sh
 # Needs the `l40s` alias in ~/.ssh/config (fs.cc.liacs.nl via ssh.liacs.nl).
 set -euo pipefail
