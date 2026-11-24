@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def load_stresstest_results(
-    root_dir: str = "results/stresstest",
+    root_dir: str = "results/flocking/stresstest",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Loads all stress-test JSONs and returns (raw_df, aggregated_df)."""
     pattern = os.path.join(root_dir, "seed_*", "*.json")
@@ -280,8 +280,12 @@ def print_compact_summary(raw_df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    root_dir = "results_2/images"
-    raw_df, agg_df = load_stresstest_results("results_2/stresstest")
+    import argparse
+    p = argparse.ArgumentParser(description="Plots of the flocking stress test")
+    p.add_argument("--results", default="results/flocking", help="RESULTS_DIR of the flocking runs")
+    a = p.parse_args()
+    root_dir = os.path.join(a.results, "comparison", "stresstest")
+    raw_df, agg_df = load_stresstest_results(os.path.join(a.results, "stresstest"))
     print_compact_summary(raw_df)
     os.makedirs(root_dir, exist_ok=True)
 

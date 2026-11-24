@@ -1,6 +1,8 @@
 #!/bin/bash
+# Stress test of the trained flocking policies (results/flocking/<native|robustness>/agents/<no_wind|wind>/)
+# under other wind, gusts and numbers of agents. Output: results/flocking/stresstest/seed_<N>/*.json
+# Usage: bash stresstest.sh stresstest
 
-RESULTS_DIR="results_2"
 SEEDS="30 31 32 33 34"
 MODES="rho none"
 N_AGENTS="4 5 6"
@@ -21,10 +23,9 @@ run_one() {
     local mode="$1"
     local n_agents="$2"
     local seed="$3"
-    local results="$4"
-    local wind_trained="$5"
-    local wind_strength="$6"
-    local wind_gusts="$7"
+    local wind_trained="$4"
+    local wind_strength="$5"
+    local wind_gusts="$6"
 
     local name="${mode}_trained_${wind_trained}_n_${n_agents}_w_${wind_strength}_g_${wind_gusts}_seed_${seed}"
     local log="local_logs/${name}.log"
@@ -38,8 +39,7 @@ run_one() {
         --seed "$seed" \
         --wind_trained "$wind_trained" \
         --wind_strength "$wind_strength" \
-        --wind_gust_strength "$wind_gusts" \
-        --results_dir "$results" 2>&1 | tee "$log"
+        --wind_gust_strength "$wind_gusts" 2>&1 | tee "$log"
 }
 
 for mode in $MODES; do
@@ -48,7 +48,7 @@ for mode in $MODES; do
             for trained in $WIND_TRAINED; do
                 for wind_strength in $WIND_STRENGTH; do
                     for wind_gust in $WIND_GUSTS; do
-                        run_one "$mode" "$n" "$seed" "$RESULTS_DIR" "$trained" "$wind_strength" "$wind_gust"
+                        run_one "$mode" "$n" "$seed" "$trained" "$wind_strength" "$wind_gust"
                     done
                 done
             done

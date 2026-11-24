@@ -83,7 +83,8 @@ For a quick check that everything runs, copy a zones yaml with `NUM_ENVS: 8`, `M
 stay in a band around it (`TARGET_RADIUS`, `EPSILON_T`), keep `AGENT_DISTANCE` from each other and match its speed
 (`TARGET_REL_SPEED`, `EPSILON_V`, `V_MAX`), optionally under wind (`WIND_STRENGTH`, `WIND_GUST_STRENGTH`). The robustness
 reward uses Coen's flocking spec (`build_floc_spec` in `sfo.py`, recovery window `TAU_FLOCK`), not `GatedSpec`.
-Flocking yamls don't set `SPLIT_RESULTS`, so they use the flat layout (see [Output](#output)).
+Flocking uses the same results layout as navigation (see [Output](#output)): `results/flocking/<native|robustness>/`,
+with the run id `no_wind` for training without wind and `wind` for training with wind.
 
 | Yaml | Use |
 |---|---|
@@ -92,40 +93,38 @@ Flocking yamls don't set `SPLIT_RESULTS`, so they use the flat layout (see [Outp
 | `stresstest.yaml` | Evaluating saved policies under other wind / numbers of agents (`EVAL_EPISODES: 1000`) |
 
 **1. Train.** Use the same entry point as navigation, with `--train true`. One call trains every mode of the yaml
-(native and ρ) for one seed. The stress test (step 2) loads its checkpoints from the fixed folders
-`results/flocking/seed_<N>` (trained without wind) and `results/flocking_wind/seed_<N>` (with wind), so train into those:
+(native and ρ); use run id `no_wind` or `wind`, because the stress test and `plots.py` look for those:
 
 ```bash
 export PYTHONPATH=src
-for s in 30 31 32; do
-  uv run python -m experiments.experiment --exp flocking.yaml      --seed $s --n_agents 4 --train true --results_dir results/flocking/seed_$s
-  uv run python -m experiments.experiment --exp flocking_wind.yaml --seed $s --n_agents 4 --train true --results_dir results/flocking_wind/seed_$s
-done
+uv run python -m experiments.experiment --exp flocking.yaml      --seed 30 --seeds 5 --n_agents 3 --run-id no_wind --train true
+uv run python -m experiments.experiment --exp flocking_wind.yaml --seed 30 --seeds 5 --n_agents 3 --run-id wind    --train true
+uv run python -m experiments.experiment --exp flocking.yaml      --run-id no_wind --compare-only   # compare.png / .csv
+uv run python -m experiments.experiment --exp flocking_wind.yaml --run-id wind    --compare-only
 ```
 
-Each run writes `results/flocking[_wind]/seed_<N>/{agents,gifs,traces}/<run_id>/flocking_<mode>_seed<N>.*`.
-`--modes`, `--seeds`, `--run-id` and `--compare-only` work as for navigation.
-`flocking_no_wind.sh` and `experiments.sh` do the same loop (5 seeds, 3 agents), but write to `results_2/...`.
-The stress test does not look there, so change `RESULTS_DIR` in those scripts or move the folders.
+Each run writes `results/flocking/<native|robustness>/{agents,gifs,traces}/<no_wind|wind>/flocking_<mode>_seed<N>.*`.
+`bash flocking_no_wind.sh flocking` and `bash flocking_wind.sh flocking_wind` do the same per seed (seeds 30–34,
+3 agents), with a log per run in `local_logs/`.
 
-**2. Stress test** (no `--train`). This loads the newest checkpoint in
-`results/flocking[_wind]/seed_<N>/agents/<latest run_id>/flocking_<mode>_seed<N>.pt`. It evaluates the policy on
-`EVAL_EPISODES` new envs with the wind and number of agents you give, and writes one JSON to
-`<results_dir>/stresstest/seed_<N>/<mode>_<windtrained|nowindtrained>_n<A>_wind_<w>_gust_<g>.json`:
+**2. Stress test** (no `--train`). This loads
+`results/flocking/<native|robustness>/agents/<wind|no_wind>/flocking_<mode>_seed<N>.pt` (`--wind_trained true|false`
+picks the run id; `--run-id` overrides it), evaluates the policy on `EVAL_EPISODES` new envs with the wind and number
+of agents you give, and writes one JSON to
+`results/flocking/stresstest/seed_<N>/<mode>_<windtrained|nowindtrained>_n<A>_wind_<w>_gust_<g>.json`:
 
 ```bash
 uv run python -m experiments.experiment --exp stresstest.yaml --mode rho --seed 30 --n_agents 6 \
-    --wind_trained true --wind_strength 0.22 --wind_gust_strength 0.22 --results_dir results_2
+    --wind_trained true --wind_strength 0.22 --wind_gust_strength 0.22
 ```
 
-`stresstest.sh` runs the full grid: modes × seeds × 4–6 agents × trained with/without wind × wind × gusts.
-Usage: `bash stresstest.sh stresstest`. Its training runs must exist in `results/flocking[_wind]` (see above).
+`bash stresstest.sh stresstest` runs the full grid: modes × seeds × 4–6 agents × trained with/without wind × wind × gusts.
 
-**3. Plots.** Both scripts have their paths hard-coded at the bottom; run them from this folder:
-- `python plot_stresstest.py`: reads `results_2/stresstest/seed_*/*.json` and writes the pass-rate and return
-  matrices (wind × gusts × number of agents) to `results_2/images`. It also prints a summary table.
-- `python plots.py`: plots the learning curves of the training runs in `results_2/flocking/seed_*`
-  (native vs ρ) to `results_2/images`.
+**3. Plots** (both take `--results`, default `results/flocking`):
+- `python plot_stresstest.py`: reads `stresstest/seed_*/*.json` and writes the pass-rate and return matrices
+  (wind × gusts × number of agents) and the ρ − native deltas to `comparison/stresstest/`. It also prints a summary table.
+- `python plots.py [--run-ids no_wind wind]`: sub-formula failure rates over training and final pass rate / return,
+  native vs ρ, to `comparison/<run_id>/flocking.png`.
 - `gif_to_png.py`: `gif_contact_sheet(gif, out)` makes a contact sheet (a grid of frames) from a GIF, for the report.
   The GIF path is hard-coded in the last line; edit it before running.
 
@@ -230,20 +229,26 @@ Both reward options of a run in one figure and one table:
 
 ## Output
 
-The zones yamls write to `results/navigation` with `SPLIT_RESULTS: True`, one folder per reward option:
+Navigation and flocking use the same layout (`SPLIT_RESULTS: True`): one root per scenario, one folder per reward option,
+and a `comparison/` folder for everything that puts both options side by side.
 
 ```
-results/navigation/
+results/<navigation|flocking>/
 ├── native/                      # REWARD_MODE none
-│   ├── agents/<run_id>/         #   checkpoints: navigation_none_seed<N>.pt
+│   ├── agents/<run_id>/         #   checkpoints: <scenario>_none_seed<N>.pt
 │   ├── gifs/<run_id>/           #   a rollout GIF per run, saved after training
 │   ├── traces/<run_id>/         #   config + eval history (.json) and diagnostics (.png) per run
 │   └── error/<run_id>.txt       #   skipped updates, if any
-├── robustness/                  # REWARD_MODE rho: the same folders (navigation_rho_seed<N>.*)
+├── robustness/                  # REWARD_MODE rho: the same folders (<scenario>_rho_seed<N>.*)
+├── stresstest/seed_<N>/         # flocking only: one JSON per stress-test setting
 └── comparison/
-    └── <run_id>/                # both options of one run: compare, analysis, scaling and summary (.png / .csv / .md)
+    ├── <run_id>/                # both options of one run: compare (+ navigation: analysis, scaling, summary;
+    │                            #   flocking: flocking.png)
+    └── stresstest/              # flocking only: matrices and deltas of the stress test
 ```
 
-Without `SPLIT_RESULTS` (Coen's flocking runs and older runs such as `results/luc`) everything of a run is in
-`RESULTS_DIR/{agents,gifs,traces,error}/<run_id>/`, and the compare, analysis and scaling files go into `traces/<run_id>/`.
-All scripts understand both layouts.
+Run ids: navigation `ippo` (or the job id on the cluster), flocking `no_wind` and `wind`.
+
+Older runs without `SPLIT_RESULTS` (`results/luc`, and Coen's earlier `results/flocking/seed_*`, `results/flocking_wind`,
+`results/stresstest`, `results/images`, `results/hyperparam`) keep everything of a run in
+`RESULTS_DIR/{agents,gifs,traces,error}/<run_id>/`. The compare, analyze and scaling scripts still read that layout.

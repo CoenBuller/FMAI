@@ -1,0 +1,3 @@
+option,n_seeds,return_mean_mean,return_mean_std,rho_mean_mean,rho_mean_std,pass_rate_mean,pass_rate_std,success_rate_mean,success_rate_std,violation_rate_mean,violation_rate_std,min_separation_mean,min_separation_std,collision_steps_mean,collision_steps_std
+native,5,29.4944,0.1197,0.0238,0.0323,0.5680,0.0578,1.0000,0.0000,0.0000,0.0000,0.8000,0.0000,0.0000,0.0000
+rho_robustness,5,27.3443,0.2236,0.0444,0.0262,0.6080,0.0504,1.0000,0.0000,0.0000,0.0000,0.7999,0.0001,0.0000,0.0000

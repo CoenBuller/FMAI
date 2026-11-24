@@ -298,8 +298,8 @@ COMPARE_TABLE = ["return_mean", "rho_mean", "pass_rate", "success_rate", "violat
 
 
 def option_label(cfg):
-    """Name of a training option: 'native' for the plain reward, else '<mode>_<spec>' (e.g. rho_coen)."""
-    return "native" if cfg.REWARD_MODE == "none" else f"{cfg.REWARD_MODE}_{cfg.SPEC}"
+    """Name of a training option: 'native' for the plain reward, else '<mode>_<spec>' (rho_robustness)."""
+    return "native" if cfg.REWARD_MODE == "none" else f"{cfg.REWARD_MODE}_{getattr(cfg, 'SPEC', None) or 'robustness'}"
 
 
 def smooth(y, k):

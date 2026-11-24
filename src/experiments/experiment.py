@@ -15,7 +15,7 @@ from environment.environment import make_env
 from fmai.train import train, evaluate
 from fmai.agents import Agent
 from fmai.sfo import build_spec, TAU2, TAU1, GatedSpec
-from fmai.utils import option_label, save_compare_plots, find_traces, comparison_dir
+from fmai.utils import option_label, save_compare_plots, find_traces, comparison_dir, run_root
 from config import Config
 
 
@@ -192,17 +192,10 @@ def stresstest(
     agent.make_agent(env=testing_env, cfg=cfg)
     agent.policy.to(device)  # type: ignore
 
-    base_dir = "results/flocking_wind" if wind else "results/flocking"
-    agents_dir = os.path.join(base_dir, f"seed_{seed}", "agents")
-    timestamps = sorted([
-        t
-        for t in os.listdir(agents_dir)
-        if os.path.isdir(os.path.join(agents_dir, t))
-    ])
-    assert timestamps, f"No timestamp directories found in {agents_dir}"
-
-    agent_path = os.path.join(agents_dir, timestamps[-1], f"flocking_{mode}_seed{seed}.pt")
-    assert os.path.exists(agent_path), f"Given path does not exist. Path: {agent_path}"
+    # The trained policy: <RESULTS_DIR>/<native|robustness>/agents/<wind|no_wind>/flocking_<mode>_seed<N>.pt
+    trained_id = args.run_id or ("wind" if wind else "no_wind")
+    agent_path = run_root(cfg) / "agents" / trained_id / f"{cfg.SCENARIO}_{mode}_seed{seed}.pt"
+    assert agent_path.exists(), f"No trained policy at {agent_path}"
 
     checkpoint = torch.load(f=agent_path, map_location=device, weights_only=True)
     agent.policy.load_state_dict(checkpoint["policy"])  # type: ignore

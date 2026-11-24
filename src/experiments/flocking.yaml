@@ -3,7 +3,8 @@ modes:
   - "rho"
 
 config:
-  RESULTS_DIR: "results/flocking_sfo"
+  RESULTS_DIR: "results/flocking"
+  SPLIT_RESULTS: true                 # results/flocking/<native|robustness>/{agents,gifs,traces}/<run_id>
   SCENARIO: "flocking"
   DEVICE: "cuda"
   SEED: 1

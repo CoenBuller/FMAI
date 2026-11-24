@@ -1,7 +1,8 @@
 modes: ["rho", "none"]
 
 config:
-  RESULTS_DIR: "results/"
+  RESULTS_DIR: "results/flocking"     # loads <native|robustness>/agents/<no_wind|wind>, writes stresstest/
+  SPLIT_RESULTS: true
   SCENARIO: "flocking"
   DEVICE: "cuda"
   SEED: 1
