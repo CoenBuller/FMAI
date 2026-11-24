@@ -63,44 +63,6 @@ def shift_vrel_err(s, v_r=0.20):
     return lambda o: lag(vrel_err(o, v_r), s, o[..., 0, -1])
 
 
-# Not used: navigation trains on GatedSpec (below). Kept for reference.
-# def build_nav_spec():
-#     """
-#     CNF Specification for navigation environment:
-#     1. Goal progress when safely spaced: ~da(t-TAU1) | ~da(t) | dg(t) | vg(1..TAU1)
-#     2. Spacing recovery or active avoidance: da(t) | da(t-1..t-TAU2) | va(1..TAU2)
-#     3. Hard safety (never critical distance): dap(t)
-#     """
-#     dg   = Pred(dgoal, "<=", 0.1)                        # At goal
-#     da   = Pred(dlidar, "<", 0.2)                        # Well-spaced now
-#     dap  = Pred(dlidar, "<", 0.8)                        # Never in critical distance
-#     sda1 = Pred(shift_dlidar(TAU1), "<", 0.2)            # Well-spaced TAU1 steps ago
-#
-#     # Progress toward goal over [1, TAU1]
-#     vg = [Defined(Pred(vgoal(s), ">", 0.0)) for s in range(1, 1 + TAU1)]
-#
-#     # Well-spaced in the past [1, TAU2] OR actively increasing separation over [1, TAU2]
-#     past_da = [Defined(Pred(shift_dlidar(s), "<", 0.2)) for s in range(1, 1 + TAU2)]
-#     va      = [Defined(Pred(vlidar(s), ">", 0.0)) for s in range(1, 1 + TAU2)]
-#
-#     c_goal_prog = Or(Defined(Not(sda1)), Not(da), dg, *vg)
-#     c_space_rec = Or(da, *past_da, *va)
-#     phi = And(c_goal_prog, c_space_rec, dap)
-#
-#     desc = [
-#         r"$\forall t: (\neg da(t-\tau_1) \vee \neg da(t) \vee d_g(t) \vee v_g(t)) "
-#         r"\wedge (\bigvee_{s=0}^{\tau_2} da(t-s) \vee \bigvee_{s=1}^{\tau_2} v_a(t,s)) "
-#         r"\wedge d_a^{+}(t)$"
-#     ]
-#     spec = WeightedRobustness([phi], weights=None, clip=1.0)
-#     spec.sub_formulas = {
-#         "goal_prog": c_goal_prog,
-#         "space_rec": c_space_rec,
-#         "hard_safe": dap,
-#     }
-#     return spec, desc
-
-
 def build_floc_spec(cfg=None, tau=TAU_FLOCK):
     """
     Normalized SFO Specification for multi-agent flocking (all predicates scaled so ideal = +1.0, threshold = 0.0):

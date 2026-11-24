@@ -55,8 +55,7 @@ Submit behind a running job: `SBATCH_ARGS="--dependency=afterany:<jobid>" bash s
 
 ## Running locally
 
-**Setup** (once): `uv sync`. `pyproject.toml` lists `qsfo` from `../artifact-fm-qsfo`; nothing imports it, but `uv sync`
-needs that folder (see `setup.sh`). The cluster job installs everything except qsfo.
+**Setup** (once): `uv sync`.
 Run all commands from this folder with `PYTHONPATH=src`. The zones yamls use `DEVICE: "cuda"`; set `DEVICE: "cpu"` without a GPU.
 
 **The full navigation pipeline** (what `cluster.sbatch` does, but one run after the other):

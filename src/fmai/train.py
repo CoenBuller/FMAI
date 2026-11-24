@@ -9,7 +9,6 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 
 from fmai.agents import Agent
 from fmai.utils import *
-from fmai.sfo import build_spec
 from config import Config
 
 
@@ -245,19 +244,3 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     gif_title = f"IPPO | {modes[mode]} | seed {cfg.SEED}"
     save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)   # always
     return history
-
-
-if __name__ == "__main__":
-    import time
-    from environment.environment import make_env
-
-    cfg = Config(DEVICE="cuda", MAX_STEPS=150, NUM_ENVS=30, EPISODES=90, EVAL_EPISODES=10,
-                 EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, DEPTH=2, ENTROPY_COEF=1e-4,
-                 REWARD_MODE="rho", RUN_ID=time.strftime("%Y%m%d_%H%M%S"))
-    spec, spec_desc = build_spec(cfg=cfg)
-
-    env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec, mode=cfg.REWARD_MODE, window=W)
-    eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)
-    torch.manual_seed(cfg.SEED)
-    agent = Agent(); agent.make_agent(env=env, cfg=cfg)
-    train(env, eval_env, agent, spec, spec_desc, cfg, verbose_eval=True)

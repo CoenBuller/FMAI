@@ -42,8 +42,8 @@ rsync -a --delete --exclude .venv --exclude results --exclude logs "$SLURM_SUBMI
 cd "$WORK"
 rm -rf results && ln -s "$OUT" results                 # RESULTS_DIR (results/...) is written straight to /data
 
-# Install from uv.lock without qsfo (an unused local-path dependency that doesn't exist on the cluster)
-uv export --frozen --no-hashes --no-emit-project --no-emit-package qsfo -o requirements.txt
+# Install the exact versions of uv.lock
+uv export --frozen --no-hashes --no-emit-project -o requirements.txt
 [ -x .venv/bin/python ] || uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 

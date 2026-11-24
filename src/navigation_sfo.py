@@ -1,6 +1,7 @@
-"""VMAS Navigation with SFO robustness terms, to compare the native reward (A) with a robustness reward (B).
+"""VMAS Navigation with SFO robustness terms. The env always gives the native reward; the robustness reward
+(GatedSpec in fmai/sfo.py) is computed in train() after each rollout, from the positions in info.
 
-Changes to the original scenario, applied in both conditions:
+Changes to the original scenario:
   - agents and goals spawn at least `spawn_spacing` apart, so the separation spec is satisfiable,
   - episodes never end early (only the time limit in train.py ends them),
   - info reports the native reward, collisions, positions and the SFO terms, whatever reward is trained on.
@@ -28,12 +29,11 @@ FAR = 100.0     # position of an unused zone (no valid placement found)
 
 
 class NavigationSFO(Scenario):
-    def make_world(self, batch_dim, device, *, reward, eps, safety_distance, spawn_spacing, lambda1, lambda2, mu2_cap,
+    def make_world(self, batch_dim, device, *, eps, safety_distance, spawn_spacing,
                    n_zones=0, zone_radius=0.25, zone_lidar_range=0.6, cat_prob=0.0,
                    cat_penalty=0.0, agent_mass=1.0, drag=0.25, **kwargs):
         world = super().make_world(batch_dim, device, **kwargs)
-        self.reward_type, self.eps, self.d = reward, eps, safety_distance
-        self.lambda1, self.lambda2, self.mu2_cap = lambda1, lambda2, mu2_cap
+        self.eps, self.d = eps, safety_distance
         self.min_distance_between_entities = spawn_spacing
 
         self.n_zones, self.zone_r, self.zone_range = n_zones, zone_radius, zone_lidar_range
@@ -111,17 +111,12 @@ class NavigationSFO(Scenario):
         return self.eps - torch.linalg.vector_norm(pos - goal, dim=-1), distances.min(dim=-1).values - self.d
 
     def reward(self, agent):
-        native = super().reward(agent)  # always computed, so info can report it in both conditions
+        native = super().reward(agent)
         if self.n_zones:                # rare catastrophe inside a zone: the only zone signal in the native reward
             inside = self.zone_dist(agent) < 0
             agent.catastrophe = (inside & (torch.rand_like(native) < self.cat_prob)).float()
             native = native - self.cat_penalty * agent.catastrophe
-        if self.reward_type == "native":
-            return native
-        if agent is self.world.agents[0]:  # once per step; every agent gets the team sum, like VMAS's shared_rew
-            mu1, mu2 = self.sfo_terms()
-            self.robust_rew = (self.lambda1 * mu1 + self.lambda2 * mu2.clamp(max=self.mu2_cap)).sum(dim=-1)
-        return self.robust_rew
+        return native
 
     def done(self):
         return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)

@@ -4,14 +4,12 @@ modes: [none, rho]
 config:
     RESULTS_DIR: "results/navigation"
     SPLIT_RESULTS: True                               # results/navigation/<native|robustness>/{agents,gifs,traces}
-    RENDER: False
     DEVICE: "cuda"
     EVAL_INTERVAL: 3                                  # Eval every 3 PPO iterations (of NUM_ENVS*MAX_STEPS steps) -> ~37 points
     SEED: 1                                           # Seed of the environment
     EVAL_EPISODES: 100                                # How many episodes for evaluation
     EPISODES: 33300                                   # Number of episodes to train for
     RHO_SCALE: 0.1                                    # zone spec rho is in [-1, 1] per step: 0.1 keeps it near the native reward scale
-    HORIZON: 4500
     EVAL_GIF: False                                   # a GIF costs ~22 s and overwrites the same file; the final GIF is always saved
 
     #---------------------------------- Env Config ----------------------------------#

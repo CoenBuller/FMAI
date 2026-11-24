@@ -86,7 +86,6 @@ def make_env(
             seed=seed,
             n_agents=cfg.NUM_AGENTS,
             shared_rew=cfg.SHARED_REW,
-            reward="native",
             eps=cfg.GOAL_EPS,
             safety_distance=cfg.SAFETY_DIST,
             n_zones=cfg.N_ZONES,                                     # danger zones + inertia (navigation_sfo.py)
@@ -97,9 +96,6 @@ def make_env(
             agent_mass=cfg.AGENT_MASS,
             drag=cfg.DRAG,
             spawn_spacing=0.4,
-            lambda1=1.0,
-            lambda2=1 / 0.3,
-            mu2_cap=0.2,
         )
 
     elif cfg["SCENARIO"] == "flocking":
@@ -140,17 +136,3 @@ def make_env(
         rho_rew = RobustnessReward(spec=spec, window=window, shared_rew=cfg.SHARED_REW)
         transforms.append(rho_rew)
     return TransformedEnv(env, Compose(*transforms))
-
-if __name__ == "__main__":
-    from config import Config
-    from fmai.utils import *
-    from fmai.sfo import build_spec
-
-    cfg = Config()
-    spec, _ = build_spec()
-    env = make_env(cfg, spec=spec, mode="rho", window=W)
-    td = env.rollout(150, break_when_any_done=False)                 # random policy
-    obs = with_episode_ids(td["next", "agents", "observation"], td["next", "done"])
-    off = spec(obs).mean(-1)                                          # [E, T]
-    on = td["next", "agents", "reward"][..., 0, 0]                    # [E, T]
-    print((off - on).abs().max())   

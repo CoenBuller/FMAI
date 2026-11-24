@@ -15,7 +15,6 @@ dependencies = [
     "torchrl>=0.14.0",
     "tqdm>=4.70.1",
     "vmas>=1.5.2",
-    "qsfo",
     "pyyaml>=6.0.3",
     "pandas>=3.1.1",
 ]
@@ -34,4 +33,3 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
-qsfo = { path = "../artifact-fm-qsfo", editable = true }

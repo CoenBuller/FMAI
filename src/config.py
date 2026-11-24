@@ -10,7 +10,6 @@ from torch.nn import Tanh, ReLU, Sigmoid
 class Config:
     RESULTS_DIR: str = "results/flocking"
     SPLIT_RESULTS: bool = False                             # True: RESULTS_DIR/<native|robustness>/{agents,gifs,traces}
-    RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 20                                 # Evaluate every 20 collector rollouts
     SEED: int = 1                                           # Seed of the environment
@@ -18,7 +17,6 @@ class Config:
     EPISODES: int | float = 50_000                          # Total training episodes
     REWARD_MODE: str = "rho"                                # 'rho' (robustness reward) or 'none' (native reward)
     RUN_ID: str = ""
-    HORIZON: int = 200
     EVAL_GIF: bool = False
     RHO_SCALE: float = 1.0                                  # GatedSpec: the reward is RHO_SCALE * rho
     SPEC: str = "robustness"                                # Spec name in the run labels (rho_robustness); navigation uses GatedSpec
