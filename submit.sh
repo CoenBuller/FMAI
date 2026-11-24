@@ -15,6 +15,6 @@ if ! ssh -G "$REMOTE" 2>/dev/null | grep -qi "^hostname fs.cc.liacs.nl"; then
 fi
 echo "Using $SSH"
 
-tar czf - --exclude=.venv --exclude=results --exclude=logs --exclude=__pycache__ --exclude=output_temp . \
+tar czf - --exclude=.venv --exclude=results --exclude=logs --exclude=__pycache__ . \
     | "$SSH" "$REMOTE" "mkdir -p ~/$DIR && tar xzf - -C ~/$DIR && cd ~/$DIR && sbatch ${SBATCH_ARGS:-} cluster.sbatch"
 echo "Follow with: $SSH $REMOTE 'squeue -u \$USER; tail -n 20 ~/$DIR/fmai-*.out'"

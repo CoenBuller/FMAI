@@ -3,9 +3,11 @@
 Zone) and the total robustness are plotted over time, per option: mean +/- 1 std over all episodes of
 all seeds. The value per episode and step is the worst agent (min over agents), as the spec must hold for all.
 
-    PYTHONPATH=src python -m experiments.analyze --traces results/luc/traces/<run_id> --agents results/luc/agents/<run_id>
+    PYTHONPATH=src python -m experiments.analyze --results results/navigation --run-id <run_id>
 
-Writes analysis.png and analysis.csv into --traces (or --out).
+Finds every traces/<run_id> folder of the run (one per option, see utils.find_traces; or pass them with --traces)
+and the checkpoints next to them (agents/<run_id>). Writes analysis.png and analysis.csv into
+<results>/comparison/<run_id> (or --out).
 """
 import argparse, csv, dataclasses, json
 from pathlib import Path
@@ -21,7 +23,7 @@ from config import Config
 from environment.environment import make_env
 from fmai.agents import Agent
 from fmai.sfo import GatedSpec
-from fmai.utils import option_label, option_color, OPTION_ORDER
+from fmai.utils import option_label, option_color, OPTION_ORDER, find_traces, agents_dir, comparison_dir
 
 TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("agent", r"$\rho_{Agent}$: agent spacing"),
          ("total", r"$\rho$: total robustness")]
@@ -65,20 +67,44 @@ def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
     return option_label(cfg), cfg, out
 
 
+def add_run_args(p, many=False):
+    """--results + --run-id(s) (finds the traces folders), or --traces directly."""
+    p.add_argument("--results", help="RESULTS_DIR of the run(s), e.g. results/navigation")
+    if many:
+        p.add_argument("--run-ids", nargs="+", help="run ids (e.g. the IPPO and the MAPPO run)")
+    else:
+        p.add_argument("--run-id", help="run id")
+    p.add_argument("--traces", nargs="+", help="or: the traces/<run_id> folder(s) themselves")
+    p.add_argument("--out", help="output folder (default: <results>/comparison[/<run_id>], or the first --traces)")
+
+
+def run_folders(p, a):
+    """-> (traces folders, output folder) from the arguments of add_run_args."""
+    ids = getattr(a, "run_ids", None) or ([a.run_id] if getattr(a, "run_id", None) else [])
+    if a.traces:
+        dirs, out = [Path(t) for t in a.traces], Path(a.traces[0])
+    elif a.results and ids:
+        dirs = [d for i in ids for d in find_traces(a.results, i)]
+        out = comparison_dir(a.results, ids[0] if len(ids) == 1 and not hasattr(a, "run_ids") else None)
+    else:
+        p.error("give --results with a run id, or --traces")
+    if not dirs:
+        raise SystemExit(f"[{p.prog}] no traces folders found for {ids} under {a.results}")
+    return dirs, Path(a.out) if a.out else out
+
+
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--traces", required=True, help="folder with the run JSONs (traces/<run_id>)")
-    p.add_argument("--agents", required=True, help="folder with the checkpoints (agents/<run_id>)")
-    p.add_argument("--out", help="output folder (default: --traces)")
+    p = argparse.ArgumentParser(prog="analyze")
+    add_run_args(p)
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=12345, help="env seed, the same for every model")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
-    out_dir = Path(a.out or a.traces)
+    trace_dirs, out_dir = run_folders(p, a)
 
     res, algo, T = {}, "", 0
-    for js in sorted(Path(a.traces).glob("*.json")):
-        ckpt = Path(a.agents) / js.with_suffix(".pt").name
+    for js in sorted(js for d in trace_dirs for js in d.glob("*.json")):
+        ckpt = agents_dir(js.parent) / js.with_suffix(".pt").name
         if not ckpt.exists():
             print(f"[analyze] no checkpoint for {js.name}, skipped")
             continue

@@ -15,7 +15,7 @@ from environment.environment import make_env
 from fmai.train import train, evaluate
 from fmai.agents import Agent
 from fmai.sfo import build_spec, TAU2, TAU1, GatedSpec
-from fmai.utils import option_label, save_compare_plots
+from fmai.utils import option_label, save_compare_plots, find_traces, comparison_dir
 from config import Config
 
 
@@ -149,16 +149,20 @@ def run_all(args, path="experiment.yaml"):
 
 
 def compare(args, path):
-    """Merge the per-process histories of a parallel run (traces/<run-id>/*.json) into compare.png / .csv."""
+    """Merge the per-process histories of a parallel run (the JSONs in every traces/<run-id> folder of the run,
+    see utils.find_traces) into comparison/<run-id>/compare.png / .csv (traces/<run-id>/ in the flat layout)."""
     e = load_experiment(path)
     cfg = Config(**{**e["config"], **cli_overrides(args=args)})
     results = {}
-    for f in sorted((Path(cfg.RESULTS_DIR) / "traces" / args.run_id).glob("*.json")):
-        d = json.loads(f.read_text())
-        results.setdefault(option_label(SimpleNamespace(**d["config"])), []).append(d["history"])
+    for d in find_traces(cfg.RESULTS_DIR, args.run_id):
+        for f in sorted(d.glob("*.json")):
+            h = json.loads(f.read_text())
+            results.setdefault(option_label(SimpleNamespace(**h["config"])), []).append(h["history"])
+    if not results:
+        raise SystemExit(f"[compare] no runs with id {args.run_id} under {cfg.RESULTS_DIR}")
     title = (f"{cfg.SCENARIO} | {'MAPPO' if cfg.MAPPO else 'IPPO'} | {cfg.NUM_AGENTS} agents | "
              f"{int(cfg.EPISODES):,} episodes")
-    save_compare_plots(results, Path(cfg.RESULTS_DIR) / "traces" / args.run_id / "compare",
+    save_compare_plots(results, comparison_dir(cfg.RESULTS_DIR, args.run_id) / "compare",
                        smooth_k=cfg.SMOOTH, title=title)
 
 

@@ -4,9 +4,10 @@ parameters over the agents and an agent's observation does not depend on how man
 sees the same environments per number of agents (fixed seed, deterministic policy, full MAX_STEPS); the metrics are
 the ones of the normal evaluation (train.evaluate, spec-independent robustness), as mean +/- std over seeds.
 
-    PYTHONPATH=src python -m experiments.scaling --traces results/luc/traces/<run_id> --n-agents 2 4 6 8
+    PYTHONPATH=src python -m experiments.scaling --results results/navigation --run-id <run_id> --n-agents 2 4 6 8
 
-Writes scaling.png and scaling.csv into --traces (or --out).
+Finds the run like analyze.py (--results + --run-id, or --traces). Writes scaling.png and scaling.csv into
+<results>/comparison/<run_id> (or --out).
 """
 import argparse, csv, dataclasses, json
 from pathlib import Path
@@ -21,7 +22,8 @@ from config import Config
 from environment.environment import make_env
 from fmai.agents import Agent
 from fmai.train import evaluate
-from fmai.utils import option_label, option_color, OPTION_ORDER
+from fmai.utils import option_label, option_color, OPTION_ORDER, agents_dir
+from experiments.analyze import add_run_args, run_folders
 
 METRICS = [("success_rate", "Success (all agents at goal at the end)"), ("pass_rate", "Pass rate (ρ ≥ 0)"),
            ("return_mean", "Eval return (native)"), ("violation_rate", "Safety violation rate"),
@@ -44,22 +46,18 @@ def zero_shot(cfg_dict, ckpt, n_agents, episodes, seed, device):
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--traces", required=True, help="folder with the run JSONs (traces/<run_id>)")
-    p.add_argument("--agents", help="folder with the checkpoints (default: traces/<id> -> agents/<id>)")
+    p = argparse.ArgumentParser(prog="scaling")
+    add_run_args(p)
     p.add_argument("--n-agents", type=int, nargs="+", required=True, help="numbers of agents to test on")
-    p.add_argument("--out", help="output folder (default: --traces)")
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=12345, help="env seed, the same for every model")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
-    traces = Path(a.traces)
-    agents_dir = Path(a.agents) if a.agents else traces.parent.parent / "agents" / traces.name
-    out_dir = Path(a.out or a.traces)
+    trace_dirs, out_dir = run_folders(p, a)
 
     res, algo, trained = {}, "", set()                                   # res[label][n] = [info per seed]
-    for js in sorted(traces.glob("*.json")):
-        ckpt = agents_dir / js.with_suffix(".pt").name
+    for js in sorted(js for d in trace_dirs for js in d.glob("*.json")):
+        ckpt = agents_dir(js.parent) / js.with_suffix(".pt").name
         if not ckpt.exists():
             print(f"[scaling] no checkpoint for {js.name}, skipped")
             continue

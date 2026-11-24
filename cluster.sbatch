@@ -17,6 +17,7 @@ MODES="rho"                                            # none | rho[:spec] | mix
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
+RESULTS="results/navigation"                           # RESULTS_DIR of the yamls (navigation, SPLIT_RESULTS)
 SCALE_AGENTS="2 4 6 8"                                 # zero-shot scaling test on these numbers of agents ("" = skip)
 MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
@@ -37,7 +38,7 @@ free_gb=$(df -BG --output=avail /local | tail -1 | tr -dc 0-9)
 [ "$free_gb" -ge 20 ] || { echo "Only ${free_gb}G free on /local, aborting"; exit 1; }
 
 mkdir -p "$WORK" "$OUT" "$LOGS"
-rsync -a --delete --exclude .venv --exclude results --exclude logs --exclude output_temp "$SLURM_SUBMIT_DIR"/ "$WORK"/
+rsync -a --delete --exclude .venv --exclude results --exclude logs "$SLURM_SUBMIT_DIR"/ "$WORK"/
 cd "$WORK"
 rm -rf results && ln -s "$OUT" results                 # RESULTS_DIR (results/...) is written straight to /data
 
@@ -70,13 +71,11 @@ echo "$failed of $n runs failed (see $LOGS)"
 for exp in $EXPERIMENTS; do
     rid="${SLURM_JOB_ID}_${exp%.yaml}"
     $PY --exp "$exp" --run-id "$rid" --compare-only --smooth "$SMOOTH" $EXTRA || echo "compare failed for $exp"
-    .venv/bin/python -m experiments.analyze --traces "results/luc/traces/$rid" --agents "results/luc/agents/$rid" \
-        || echo "analysis failed for $exp"
-    [ -z "$SCALE_AGENTS" ] || .venv/bin/python -m experiments.scaling --traces "results/luc/traces/$rid" --n-agents $SCALE_AGENTS \
-        || echo "scaling test failed for $exp"
+    .venv/bin/python -m experiments.analyze --results "$RESULTS" --run-id "$rid" || echo "analysis failed for $exp"
+    [ -z "$SCALE_AGENTS" ] || .venv/bin/python -m experiments.scaling --results "$RESULTS" --run-id "$rid" \
+        --n-agents $SCALE_AGENTS || echo "scaling test failed for $exp"
 done
 # One figure + table over all experiments (e.g. IPPO and MAPPO): learning curves, final eval, steps to goal, spec rho
-.venv/bin/python -m experiments.summary --smooth "$SMOOTH" --out "results/luc/traces" \
-    --traces $(for exp in $EXPERIMENTS; do echo "results/luc/traces/${SLURM_JOB_ID}_${exp%.yaml}"; done) \
-    || echo "summary failed"
-echo "Results in $OUT/<RESULTS_DIR>/traces/${SLURM_JOB_ID}_*"
+.venv/bin/python -m experiments.summary --smooth "$SMOOTH" --results "$RESULTS" \
+    --run-ids $(for exp in $EXPERIMENTS; do echo "${SLURM_JOB_ID}_${exp%.yaml}"; done) || echo "summary failed"
+echo "Results in $OUT/${RESULTS#results/}/: <native|robustness|mixed>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"

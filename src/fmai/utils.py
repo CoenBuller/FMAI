@@ -65,6 +65,34 @@ def create_paths(base_dir, run_id, stem):
         "Error": Path(base_dir) / "error" / f"{run_id}.txt",
     }
     return paths
+
+# Results layout. Flat (default):        <RESULTS_DIR>/{agents,gifs,traces,error}/<run_id>/
+# SPLIT_RESULTS (one folder per option): <RESULTS_DIR>/<native|robustness|mixed>/{agents,gifs,traces,error}/<run_id>/
+#                                        <RESULTS_DIR>/comparison/<run_id>/  (compare, analysis, scaling) + summaries
+OPTION_DIRS = {"none": "native", "rho": "robustness", "mixed": "mixed"}
+
+def run_root(cfg):
+    """Folder that holds agents/, gifs/, traces/ and error/ of a run."""
+    root = Path(cfg.RESULTS_DIR)
+    return root / OPTION_DIRS[cfg.REWARD_MODE] if getattr(cfg, "SPLIT_RESULTS", False) else root
+
+def find_traces(results_dir, run_id):
+    """The traces/<run_id> folders of a run: one per option folder (split layout) or the single flat one."""
+    root = Path(results_dir)
+    flat = root / "traces" / run_id
+    return sorted(root.glob(f"*/traces/{run_id}")) + ([flat] if flat.is_dir() else [])
+
+def agents_dir(traces_dir):
+    """<root>/traces/<run_id> -> <root>/agents/<run_id> (the checkpoints of the same runs)."""
+    return Path(traces_dir).parent.parent / "agents" / Path(traces_dir).name
+
+def comparison_dir(results_dir, run_id=None):
+    """Where the figures over all options of a run go: comparison/<run_id> (split) or traces/<run_id> (flat).
+    Without run_id: the folder for summaries over several runs."""
+    root = Path(results_dir)
+    split = any(root.glob("*/traces")) or not (root / "traces").is_dir()
+    base = root / "comparison" if split else root / "traces"
+    return base / run_id if run_id else base
 n_logged = 0
 
 

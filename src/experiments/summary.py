@@ -1,6 +1,8 @@
 """Cross-algorithm summary: every (algorithm x reward option) of one or more run folders in one figure and one table.
 
-    PYTHONPATH=src python -m experiments.summary --traces results/luc/traces/<id>_IPPO_zones results/luc/traces/<id>_MAPPO_zones
+    PYTHONPATH=src python -m experiments.summary --results results/navigation --run-ids <id>_IPPO_zones <id>_MAPPO_zones
+
+(or --traces with the traces/<run_id> folders). Output: <results>/comparison/summary_<ids>.* (or --out).
 
 - summary.png: learning curves (eval metrics vs env steps), colour = reward option, line style = algorithm
   (solid IPPO, dashed MAPPO), mean +/- std over seeds, each seed smoothed first (--smooth).
@@ -22,8 +24,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from config import Config
-from fmai.utils import option_label, option_color, smooth, OPTION_ORDER
-from experiments.analyze import rollout_terms
+from fmai.utils import option_label, option_color, smooth, OPTION_ORDER, agents_dir
+from experiments.analyze import rollout_terms, add_run_args, run_folders
 
 CURVES = [("return_mean", "Eval return (native)"), ("rho_mean", "Eval robustness ρ (spec-independent)"),
           ("pass_rate", "Pass rate (ρ ≥ 0)"), ("success_rate", "Success (all agents at goal)"),
@@ -55,21 +57,19 @@ def ms(x):
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--traces", nargs="+", required=True, help="run folders traces/<run_id> (e.g. IPPO and MAPPO)")
-    p.add_argument("--agents", nargs="+", help="matching checkpoint folders (default: traces/<id> -> agents/<id>)")
-    p.add_argument("--out", help="output folder (default: the parent of the first --traces folder)")
+    p = argparse.ArgumentParser(prog="summary")
+    add_run_args(p, many=True)
     p.add_argument("--smooth", type=int, default=5)
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=12345)
     p.add_argument("--no-rollouts", action="store_true")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
-    agents = a.agents or [str(Path(t).parent.parent / "agents" / Path(t).name) for t in a.traces]
-    ckpt_dir = {Path(t).resolve(): Path(g) for t, g in zip(a.traces, agents)}
-    out = Path(a.out or Path(a.traces[0]).parent)
-    tag = "_".join(Path(t).name for t in a.traces)
-    runs = load(a.traces)
+    trace_dirs, out = run_folders(p, a)
+    if a.traces and not a.out:
+        out = out.parent                                             # the folder above traces/<run_id>
+    tag = "_".join(a.run_ids) if a.run_ids and not a.traces else "_".join(dict.fromkeys(d.name for d in trace_dirs))
+    runs = load(trace_dirs)
     if not runs:
         raise SystemExit("[summary] no runs found")
 
@@ -111,7 +111,7 @@ def main():
         if not a.no_rollouts:
             r = {}
             for _, cfg_dict, js in seeds:
-                ckpt = ckpt_dir[js.parent.resolve()] / js.with_suffix(".pt").name
+                ckpt = agents_dir(js.parent) / js.with_suffix(".pt").name
                 if not ckpt.exists():
                     print(f"[summary] no checkpoint {ckpt}, skipped")
                     continue

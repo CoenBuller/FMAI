@@ -9,6 +9,7 @@ from torch.nn import Tanh, ReLU, Sigmoid
 @dataclass
 class Config:
     RESULTS_DIR: str = "results/flocking"
+    SPLIT_RESULTS: bool = False                             # True: RESULTS_DIR/<native|robustness|mixed>/{agents,gifs,traces}
     RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 20                                 # Evaluate every 20 collector rollouts

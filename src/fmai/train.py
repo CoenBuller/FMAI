@@ -105,7 +105,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     assert mode in modes, f"Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
-    paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem)
+    paths = create_paths(run_root(cfg), cfg.RUN_ID, stem)                   # see utils.run_root for the layout
 
     E = env.batch_size[0]
     assert cfg.EPISODES >= E, f"EPISODES ({cfg.EPISODES}) is smaller than the number of envs ({E})"

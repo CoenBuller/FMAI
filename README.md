@@ -32,7 +32,7 @@ What to run is set in the block at the top of `cluster.sbatch` (see the variable
 ```bash
 ssh.exe l40s 'squeue -u $USER; tail -n 20 ~/fmai-ass1/fmai-<jobid>.out'
 ssh.exe l40s 'tail -n 2 ~/fmai-ass1/logs/<jobid>/*.log'                 # progress per run
-scp.exe -r "l40s:/data/s3774740/fmai-results/luc/traces/<jobid>_*" output_temp/
+scp.exe -r "l40s:/data/s3774740/fmai-results/navigation" results/            # everything of the navigation runs
 ssh.exe l40s 'scancel <jobid>'                                         # stop the job
 ```
 
@@ -70,11 +70,11 @@ uv run python -m experiments.experiment --exp MAPPO_zones.yaml --modes none rho 
 uv run python -m experiments.experiment --exp IPPO_zones.yaml --run-id ippo --compare-only --smooth 5
 uv run python -m experiments.experiment --exp MAPPO_zones.yaml --run-id mappo --compare-only --smooth 5
 # 3. Robustness analysis of the final checkpoints (spec terms over time)
-uv run python -m experiments.analyze --traces results/luc/traces/ippo --agents results/luc/agents/ippo
+uv run python -m experiments.analyze --results results/navigation --run-id ippo
 # 4. Zero-shot scaling: the same policies on 2, 4, 6 and 8 agents, without retraining
-uv run python -m experiments.scaling --traces results/luc/traces/ippo --n-agents 2 4 6 8
+uv run python -m experiments.scaling --results results/navigation --run-id ippo --n-agents 2 4 6 8
 # 5. One summary over both algorithms
-uv run python -m experiments.summary --traces results/luc/traces/ippo results/luc/traces/mappo
+uv run python -m experiments.summary --results results/navigation --run-ids ippo mappo
 ```
 
 For a quick check that everything runs, copy a zones yaml with `NUM_ENVS: 8`, `MAX_STEPS: 20`, `EPISODES: 16`,
@@ -112,6 +112,7 @@ policy (`stresstest.sh`, `stresstest.yaml`, `plot_stresstest.py`).
 **Config fields** (`src/config.py`) that matter for navigation, settable in the yaml:
 - `GOAL_EPS` (0.1) and `SAFETY_DIST` (0.3): the eval robustness ρ = minᵢ min(maxₜ μ1ᵢ, minₜ μ2ᵢ[, minₜ μ3ᵢ]), i.e. every agent reaches its goal, never comes closer than `SAFETY_DIST` to another agent (and never enters a zone). It is the same for every option. `GatedSpec.from_config` also takes `GOAL_EPS`, `SAFETY_DIST`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `AGENT_MASS` and `DRAG` from the config.
 - `N_ZONES`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `CAT_PROB`, `CAT_PENALTY`, `AGENT_MASS`, `DRAG`: danger zones and inertia (see above).
+- `RESULTS_DIR`, `SPLIT_RESULTS`: where the results go (see [Output](#output)).
 - `RHO_SCALE`: the gated reward is `RHO_SCALE`·ρ. `RHO_COEF`: weight of ρ in `mixed`.
 - `MAPPO`, `MAPPO_SHARED_REW`: by default MAPPO forces a team reward (`SHARED_REW`). `MAPPO_zones.yaml` sets `MAPPO_SHARED_REW: False`, so IPPO and MAPPO differ only in the critic and every agent gets its own reward and ρ.
 - `EVAL_INTERVAL` (every N iterations), `EVAL_EPISODES`, `EVAL_GIF` (a GIF at every eval; slow, and the final GIF is always saved anyway).
@@ -126,16 +127,16 @@ mean of each term, fraction of steps and of whole episodes with ρ ≥ 0, all ag
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--traces DIR` | required | `traces/<run_id>` |
-| `--agents DIR` | required | `agents/<run_id>` |
+| `--results DIR` + `--run-id ID` | – | The run: every `<option>/traces/<ID>` folder under `DIR` (e.g. `results/navigation`), or `traces/<ID>` in a flat layout |
+| `--traces DIR ...` | – | Or: the `traces/<run_id>` folder(s) themselves |
+| `--out DIR` | `<results>/comparison/<ID>` (or the first `--traces`) | Output folder |
 | `--episodes N` | 100 | Environments per checkpoint |
 | `--seed N` | 12345 | Env seed, the same for every model |
-| `--out DIR` | `--traces` | Output folder |
 | `--device D` | cuda if available | |
 
 ### `experiments/scaling.py` (zero-shot scaling)
 
-Every checkpoint of a run, trained with `NUM_AGENTS` agents, is evaluated **without retraining** on environments with
+All checkpoints are found next to the traces (`<option>/agents/<run_id>`). Every checkpoint of a run, trained with `NUM_AGENTS` agents, is evaluated **without retraining** on environments with
 other numbers of agents. This works because the policy shares its parameters over the agents and an agent's
 observation does not depend on the number of agents. The metrics are those of the normal evaluation (success, pass rate,
 return, safety violations, collisions, zone entries), as mean ± std over seeds. Writes `scaling.png` (metric vs number
@@ -143,12 +144,12 @@ of agents; dashed line = the number it was trained on) and `scaling.csv`.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--traces DIR` | required | `traces/<run_id>` |
+| `--results DIR` + `--run-id ID` | – | The run: every `<option>/traces/<ID>` folder under `DIR` (e.g. `results/navigation`), or `traces/<ID>` in a flat layout |
+| `--traces DIR ...` | – | Or: the `traces/<run_id>` folder(s) themselves |
+| `--out DIR` | `<results>/comparison/<ID>` (or the first `--traces`) | Output folder |
 | `--n-agents N ...` | required | Numbers of agents to test on, e.g. `2 4 6 8` |
-| `--agents DIR` | `traces/<id>` → `agents/<id>` | Checkpoint folder |
 | `--episodes N` | 100 | Environments per number of agents |
 | `--seed N` | 12345 | Env seed, the same for every model |
-| `--out DIR` | `--traces` | Output folder |
 | `--device D` | cuda if available | |
 
 ### `experiments/summary.py` (summary over algorithms)
@@ -159,9 +160,9 @@ All algorithm × reward combinations of one or more run folders in one figure an
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--traces DIR ...` | required | Run folders `traces/<run_id>` (e.g. IPPO and MAPPO) |
-| `--agents DIR ...` | `traces/<id>` → `agents/<id>` | Matching checkpoint folders |
-| `--out DIR` | parent of the first `--traces` | Output folder |
+| `--results DIR` + `--run-ids ID ...` | – | The runs, e.g. the IPPO and the MAPPO run |
+| `--traces DIR ...` | – | Or: the `traces/<run_id>` folders themselves |
+| `--out DIR` | `<results>/comparison` (or the folder above the first `--traces`) | Output folder |
 | `--smooth K` | 5 | Moving average of the curves |
 | `--episodes N`, `--seed N` | 100, 12345 | Rollouts of the final checkpoints |
 | `--no-rollouts` | off | Only the curves and the final eval |
@@ -171,6 +172,7 @@ All algorithm × reward combinations of one or more run folders in one figure an
 
 | Variable | Meaning |
 |---|---|
+| `RESULTS` | `RESULTS_DIR` of the yamls (`results/navigation`) |
 | `EXPERIMENTS` | Yamls to run, e.g. `"IPPO_zones.yaml MAPPO_zones.yaml"` |
 | `MODES` | Options, e.g. `"none rho"` |
 | `SEEDS` | e.g. `"1 2 3"` |
@@ -181,8 +183,22 @@ All algorithm × reward combinations of one or more run folders in one figure an
 
 ## Output
 
-All output goes under `RESULTS_DIR` (`results/luc` in the zones yamls):
-- `traces/<run_id>/`: per-run `<scenario>_<option>_seed<N>.json` (config + eval history) and `.png`, plus `compare.png` / `compare.csv`, `analysis.png` / `analysis.csv` and `scaling.png` / `scaling.csv`.
-- `agents/<run_id>/`: checkpoints.
-- `gifs/<run_id>/`: a rollout GIF per run, saved after training (drawn with matplotlib when there is no display, e.g. on the cluster).
-- `error/`: skipped updates.
+The zones yamls write to `results/navigation` with `SPLIT_RESULTS: True`, one folder per reward option:
+
+```
+results/navigation/
+├── native/                      # REWARD_MODE none
+│   ├── agents/<run_id>/         #   checkpoints: navigation_none_seed<N>.pt
+│   ├── gifs/<run_id>/           #   a rollout GIF per run, saved after training
+│   ├── traces/<run_id>/         #   config + eval history (.json) and diagnostics (.png) per run
+│   └── error/<run_id>.txt       #   skipped updates, if any
+├── robustness/                  # REWARD_MODE rho: the same folders (navigation_rho_seed<N>.*)
+├── mixed/                       # REWARD_MODE mixed
+└── comparison/
+    ├── <run_id>/                # all options of one run: compare, analysis and scaling (.png / .csv)
+    └── summary_<ids>.*          # summary over several runs (e.g. IPPO and MAPPO)
+```
+
+Without `SPLIT_RESULTS` (Coen's flocking runs and older runs such as `results/luc`) everything of a run is in
+`RESULTS_DIR/{agents,gifs,traces,error}/<run_id>/`, and the compare, analysis and scaling files go into `traces/<run_id>/`.
+All scripts understand both layouts.
