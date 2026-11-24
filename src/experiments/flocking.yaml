@@ -16,7 +16,6 @@ config:
   EVAL_INTERVAL: 5
   EVAL_EPISODES: 100
   EVAL_GIF: true
-  RHO_COEF: 1.0
 
   # Flocking Geometry & SFO Thresholds
   OBSERVE_PEERS: true
@@ -48,7 +47,6 @@ config:
   W_V_MAX: 1.0
 
   # PPO / Network Hyperparameters
-  MAPPO: false
   SHARED_REW: false
   DEPTH: 2
   N_NODES: 256

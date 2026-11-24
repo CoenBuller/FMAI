@@ -67,29 +67,24 @@ def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
     return option_label(cfg), cfg, out
 
 
-def add_run_args(p, many=False):
-    """--results + --run-id(s) (finds the traces folders), or --traces directly."""
-    p.add_argument("--results", help="RESULTS_DIR of the run(s), e.g. results/navigation")
-    if many:
-        p.add_argument("--run-ids", nargs="+", help="run ids (e.g. the IPPO and the MAPPO run)")
-    else:
-        p.add_argument("--run-id", help="run id")
+def add_run_args(p):
+    """--results + --run-id (finds the traces folders), or --traces directly."""
+    p.add_argument("--results", help="RESULTS_DIR of the run, e.g. results/navigation")
+    p.add_argument("--run-id", help="run id")
     p.add_argument("--traces", nargs="+", help="or: the traces/<run_id> folder(s) themselves")
-    p.add_argument("--out", help="output folder (default: <results>/comparison[/<run_id>], or the first --traces)")
+    p.add_argument("--out", help="output folder (default: <results>/comparison/<run_id>, or the first --traces)")
 
 
 def run_folders(p, a):
     """-> (traces folders, output folder) from the arguments of add_run_args."""
-    ids = getattr(a, "run_ids", None) or ([a.run_id] if getattr(a, "run_id", None) else [])
     if a.traces:
         dirs, out = [Path(t) for t in a.traces], Path(a.traces[0])
-    elif a.results and ids:
-        dirs = [d for i in ids for d in find_traces(a.results, i)]
-        out = comparison_dir(a.results, ids[0] if len(ids) == 1 and not hasattr(a, "run_ids") else None)
+    elif a.results and a.run_id:
+        dirs, out = find_traces(a.results, a.run_id), comparison_dir(a.results, a.run_id)
     else:
-        p.error("give --results with a run id, or --traces")
+        p.error("give --results with --run-id, or --traces")
     if not dirs:
-        raise SystemExit(f"[{p.prog}] no traces folders found for {ids} under {a.results}")
+        raise SystemExit(f"[{p.prog}] no traces folders found for {a.run_id} under {a.results}")
     return dirs, Path(a.out) if a.out else out
 
 
@@ -102,14 +97,14 @@ def main():
     a = p.parse_args()
     trace_dirs, out_dir = run_folders(p, a)
 
-    res, algo, T = {}, "", 0
+    res, T = {}, 0
     for js in sorted(js for d in trace_dirs for js in d.glob("*.json")):
         ckpt = agents_dir(js.parent) / js.with_suffix(".pt").name
         if not ckpt.exists():
             print(f"[analyze] no checkpoint for {js.name}, skipped")
             continue
         label, cfg, out = rollout_terms(json.load(open(js))["config"], ckpt, a.episodes, a.seed, a.device)
-        algo, T = ("MAPPO" if cfg.MAPPO else "IPPO"), cfg.MAX_STEPS
+        T = cfg.MAX_STEPS
         r = res.setdefault(label, {k: [] for k in out})
         for k, v in out.items():
             r[k].append(v)
@@ -145,7 +140,7 @@ def main():
     for ax in axes[1]:
         ax.set_xlabel("Time step")
     axes[0, 0].legend(fontsize=8)
-    fig.suptitle(f"{algo} | gated spec terms over time | worst agent per episode | mean ± 1 std over "
+    fig.suptitle(f"IPPO | gated spec terms over time | worst agent per episode | mean ± 1 std over "
                  f"{a.episodes} episodes × seeds (same envs)", fontsize=10)
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)

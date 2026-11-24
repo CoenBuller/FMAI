@@ -6,8 +6,8 @@
 
 # FMAI: robustness-shaped MARL on VMAS Navigation
 
-We train PPO agents (IPPO or MAPPO) on VMAS Navigation and compare reward signals:
-the native VMAS reward, the robustness ρ of a qSFO spec, or a mix of both.
+We train IPPO agents on VMAS Navigation and compare two reward signals:
+the native VMAS reward and the robustness ρ of a qSFO spec.
 Every option is evaluated on the same spec-independent robustness, so the results are comparable.
 
 ## The current experiment (LIACS cluster)
@@ -36,7 +36,7 @@ scp.exe -r "l40s:/data/s3774740/fmai-results/navigation" results/            # e
 ssh.exe l40s 'scancel <jobid>'                                         # stop the job
 ```
 
-### Danger zones + inertia (`IPPO_zones.yaml`, `MAPPO_zones.yaml`)
+### Danger zones + inertia (`IPPO_zones.yaml`)
 
 An augmented Navigation (`src/navigation_sfo.py`):
 - **Danger zones:** `N_ZONES: 2` circles (`ZONE_RADIUS: 0.25`) per episode, on the straight path of random agents, never on a spawn or goal. Agents can drive through them. They see zones through a second 12-ray LiDAR (`ZONE_LIDAR_RANGE: 0.6`, appended to the observation; inside a zone every ray reads 0).
@@ -46,7 +46,7 @@ An augmented Navigation (`src/navigation_sfo.py`):
   - Prog: progress towards the goal in the last step (1 within `eps_g` of the goal), Agent: distance to the nearest agent, Zone: signed distance to the nearest zone edge.
   - Gate: if every term is ≥ 0 the reward is Prog, otherwise it is the worst term.
   - Scored on the true positions after the rollout (`reward_fn` in `train()`), not in the env.
-  - The reward is `RHO_SCALE` (0.1) · ρ, so it stays near the native reward scale (`mixed` = native + 0.1·ρ).
+  - The reward is `RHO_SCALE` (0.1) · ρ, so it stays near the native reward scale.
   - Actor and critic gradients are clipped separately (1.0 each).
 - **Eval** adds `zone_entry_rate` (episodes in which any agent entered a zone) and `catastrophes` per episode, and the `sfo` robustness gets a third term μ3 (distance to the nearest zone). `analyze.py` adds a Zone panel and the fraction of agents inside a zone over time.
 - **GIFs** are always drawn with matplotlib, with zones (red) and catastrophes (black X).
@@ -63,24 +63,22 @@ Run all commands from this folder with `PYTHONPATH=src`. The zones yamls use `DE
 
 ```bash
 export PYTHONPATH=src
-# 1. Train: IPPO and MAPPO x native and robustness reward x 3 seeds (one run id per algorithm)
-uv run python -m experiments.experiment --exp IPPO_zones.yaml  --modes none rho --seeds 3 --run-id ippo --train true
-uv run python -m experiments.experiment --exp MAPPO_zones.yaml --modes none rho --seeds 3 --run-id mappo --train true
-# 2. Compare figure + table per run id
+# 1. Train: native and robustness reward x 3 seeds, all under one run id
+uv run python -m experiments.experiment --exp IPPO_zones.yaml --modes none rho --seeds 3 --run-id ippo --train true
+# 2. Compare figure + table (learning curves of both options)
 uv run python -m experiments.experiment --exp IPPO_zones.yaml --run-id ippo --compare-only --smooth 5
-uv run python -m experiments.experiment --exp MAPPO_zones.yaml --run-id mappo --compare-only --smooth 5
 # 3. Robustness analysis of the final checkpoints (spec terms over time)
 uv run python -m experiments.analyze --results results/navigation --run-id ippo
 # 4. Zero-shot scaling: the same policies on 2, 4, 6 and 8 agents, without retraining
 uv run python -m experiments.scaling --results results/navigation --run-id ippo --n-agents 2 4 6 8
-# 5. One summary over both algorithms
-uv run python -m experiments.summary --results results/navigation --run-ids ippo mappo
+# 5. Summary: curves, final eval, steps to goal and spec rho per step of both options
+uv run python -m experiments.summary --results results/navigation --run-id ippo
 ```
 
 For a quick check that everything runs, copy a zones yaml with `NUM_ENVS: 8`, `MAX_STEPS: 20`, `EPISODES: 16`,
 `MINIBATCH: 80`, `EVAL_EPISODES: 4`, `DEVICE: "cpu"` (a few seconds per run).
 
-### Flocking (Coen's experiments)
+## Flocking
 
 `SCENARIO: "flocking"` (`src/environment/flocking.py`): the agents follow a target that moves as a random walk. They must
 stay in a band around it (`TARGET_RADIUS`, `EPSILON_T`), keep `AGENT_DISTANCE` from each other and match its speed
@@ -145,14 +143,13 @@ flocking runs.
 |---|---|---|
 | `--exp FILE` | – | **Required.** Yaml in `src/experiments/` (`config:` block = Config fields, `modes:` = default options) |
 | `--train true` | – | **Needed to train.** Without it, the script runs Coen's (flocking) stress test |
-| `--modes ...` | yaml `modes` | Options, trained in this order: `none` (native reward), `rho[:spec]` (reward = spec robustness ρ), `mixed[:spec]` (native + `RHO_COEF`·ρ). Navigation always trains on `GatedSpec` (`SPEC: robustness`, labels `rho_robustness`, `mixed_robustness`). Flocking uses Coen's flocking spec |
+| `--modes ...` | yaml `modes` | Options, trained in this order: `none` (native reward) and/or `rho` (reward = spec robustness ρ). Navigation trains on `GatedSpec` (label `rho_robustness`), flocking on Coen's flocking spec |
 | `--seeds N` | `N_SEEDS` | Seeds `SEED … SEED+N−1` per option (default 1) |
 | `--seed N` | `SEED` | First seed |
 | `--run-id ID` | `RUN_ID` | Output folder name (default: timestamp). Parallel runs share one id |
 | `--compare-only` | – | No training: builds `compare.png` / `compare.csv` from the JSONs in `traces/<run-id>` |
 | `--smooth K` | `SMOOTH` | Moving-average window (in eval points) for the compare plots; `1` = off |
 | `--n_agents N` | `NUM_AGENTS` | Number of agents |
-| `--mappo true/false` | `MAPPO` | Centralised critic |
 | `--shared_reward true/false` | `SHARED_REW` | Team reward |
 | `--results_dir DIR` | `RESULTS_DIR` | Output root |
 | `--scenario S` | `SCENARIO` | `navigation` or `flocking` |
@@ -164,8 +161,8 @@ flocking runs.
 - `GOAL_EPS` (0.1) and `SAFETY_DIST` (0.3): the eval robustness ρ = minᵢ min(maxₜ μ1ᵢ, minₜ μ2ᵢ[, minₜ μ3ᵢ]), i.e. every agent reaches its goal, never comes closer than `SAFETY_DIST` to another agent (and never enters a zone). It is the same for every option. `GatedSpec.from_config` also takes `GOAL_EPS`, `SAFETY_DIST`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `AGENT_MASS` and `DRAG` from the config.
 - `N_ZONES`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `CAT_PROB`, `CAT_PENALTY`, `AGENT_MASS`, `DRAG`: danger zones and inertia (see above).
 - `RESULTS_DIR`, `SPLIT_RESULTS`: where the results go (see [Output](#output)).
-- `RHO_SCALE`: the gated reward is `RHO_SCALE`·ρ. `RHO_COEF`: weight of ρ in `mixed`.
-- `MAPPO`, `MAPPO_SHARED_REW`: by default MAPPO forces a team reward (`SHARED_REW`). `MAPPO_zones.yaml` sets `MAPPO_SHARED_REW: False`, so IPPO and MAPPO differ only in the critic and every agent gets its own reward and ρ.
+- `RHO_SCALE`: the gated reward is `RHO_SCALE`·ρ.
+- `SHARED_REW`: `False` (the zones yaml): every agent gets its own reward and ρ; `True`: all agents get the team reward.
 - `EVAL_INTERVAL` (every N iterations), `EVAL_EPISODES`, `EVAL_GIF` (a GIF at every eval; slow, and the final GIF is always saved anyway).
 - `ENTROPY_COEF`, `LR`, `EPOCHS`, `MINIBATCH` (must be ≤ `NUM_ENVS × MAX_STEPS`, or no update runs), `ACTIVATION` (`Tanh`, `ReLU`, `Sigmoid`), …
 
@@ -203,17 +200,17 @@ of agents; dashed line = the number it was trained on) and `scaling.csv`.
 | `--seed N` | 12345 | Env seed, the same for every model |
 | `--device D` | cuda if available | |
 
-### `experiments/summary.py` (summary over algorithms)
+### `experiments/summary.py` (summary of a run)
 
-All algorithm × reward combinations of one or more run folders in one figure and one table:
-- `summary_<ids>.png`: learning curves (eval return, eval ρ, pass rate, success, safety violations, zone entries). Colour = reward option, line style = algorithm (solid IPPO, dashed MAPPO), mean ± std over seeds.
-- `summary_<ids>.csv` / `.md`: per combination, the final eval (mean ± std over seeds) and, from rollouts of the final checkpoints on the same envs, the steps until an agent and until all agents reach their goal, and the spec ρ per step.
+Both reward options of a run in one figure and one table:
+- `summary.png`: learning curves (eval return, eval ρ, pass rate, success, safety violations, zone entries), one colour per option, mean ± std over seeds.
+- `summary.csv` / `.md`: per option, the final eval (mean ± std over seeds) and, from rollouts of the final checkpoints on the same envs, the steps until an agent and until all agents reach their goal, and the spec ρ per step.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--results DIR` + `--run-ids ID ...` | – | The runs, e.g. the IPPO and the MAPPO run |
-| `--traces DIR ...` | – | Or: the `traces/<run_id>` folders themselves |
-| `--out DIR` | `<results>/comparison` (or the folder above the first `--traces`) | Output folder |
+| `--results DIR` + `--run-id ID` | – | The run, as for `analyze.py` |
+| `--traces DIR ...` | – | Or: the `traces/<run_id>` folder(s) themselves |
+| `--out DIR` | `<results>/comparison/<ID>` (or the first `--traces`) | Output folder |
 | `--smooth K` | 5 | Moving average of the curves |
 | `--episodes N`, `--seed N` | 100, 12345 | Rollouts of the final checkpoints |
 | `--no-rollouts` | off | Only the curves and the final eval |
@@ -224,7 +221,7 @@ All algorithm × reward combinations of one or more run folders in one figure an
 | Variable | Meaning |
 |---|---|
 | `RESULTS` | `RESULTS_DIR` of the yamls (`results/navigation`) |
-| `EXPERIMENTS` | Yamls to run, e.g. `"IPPO_zones.yaml MAPPO_zones.yaml"` |
+| `EXPERIMENTS` | Yamls to run (`"IPPO_zones.yaml"`) |
 | `MODES` | Options, e.g. `"none rho"` |
 | `SEEDS` | e.g. `"1 2 3"` |
 | `SMOOTH` | Moving average of the compare plots |
@@ -244,10 +241,8 @@ results/navigation/
 │   ├── traces/<run_id>/         #   config + eval history (.json) and diagnostics (.png) per run
 │   └── error/<run_id>.txt       #   skipped updates, if any
 ├── robustness/                  # REWARD_MODE rho: the same folders (navigation_rho_seed<N>.*)
-├── mixed/                       # REWARD_MODE mixed
 └── comparison/
-    ├── <run_id>/                # all options of one run: compare, analysis and scaling (.png / .csv)
-    └── summary_<ids>.*          # summary over several runs (e.g. IPPO and MAPPO)
+    └── <run_id>/                # both options of one run: compare, analysis, scaling and summary (.png / .csv / .md)
 ```
 
 Without `SPLIT_RESULTS` (Coen's flocking runs and older runs such as `results/luc`) everything of a run is in

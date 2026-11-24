@@ -9,19 +9,18 @@ from torch.nn import Tanh, ReLU, Sigmoid
 @dataclass
 class Config:
     RESULTS_DIR: str = "results/flocking"
-    SPLIT_RESULTS: bool = False                             # True: RESULTS_DIR/<native|robustness|mixed>/{agents,gifs,traces}
+    SPLIT_RESULTS: bool = False                             # True: RESULTS_DIR/<native|robustness>/{agents,gifs,traces}
     RENDER: bool = False
     DEVICE: str = "cuda"
     EVAL_INTERVAL: int = 20                                 # Evaluate every 20 collector rollouts
     SEED: int = 1                                           # Seed of the environment
     EVAL_EPISODES: int = 10                                 # How many parallel episodes for evaluation
     EPISODES: int | float = 50_000                          # Total training episodes
-    REWARD_MODE: str = "rho"                                # 'rho' (SFO robustness), 'none' (native reward), or 'mixed'
-    RHO_COEF: float = 1.0
+    REWARD_MODE: str = "rho"                                # 'rho' (robustness reward) or 'none' (native reward)
     RUN_ID: str = ""
     HORIZON: int = 200
     EVAL_GIF: bool = False
-    RHO_SCALE: float = 1.0                                  # GatedSpec: reward rho is multiplied by this (rho and mixed)
+    RHO_SCALE: float = 1.0                                  # GatedSpec: the reward is RHO_SCALE * rho
     SPEC: str = "robustness"                                # Spec name in the run labels (rho_robustness); navigation uses GatedSpec
     N_SEEDS: int = 1                                        # Seeds SEED .. SEED + N_SEEDS - 1 are run per option (experiment.py)
     SMOOTH: int = 1                                         # Moving-average window (in eval points) for the compare plots; 1 = off
@@ -32,7 +31,7 @@ class Config:
     NUM_AGENTS: int = 4                                     # Default swarm size (scales up to N_MAX = 6)
     MAX_STEPS: int = 200                                    # Episode length (200 steps = ~2 full orbits)
     CONTINUOUS_ACTIONS: bool = True                         # Continuous 2D thrust forces
-    SHARED_REW: bool = False                                # Individual agent robustness by default (True if MAPPO)
+    SHARED_REW: bool = False                                # True: every agent gets the team reward
     OBSERVE_PEERS: bool = False                         # Include peer Lidar readings in observations
     N_LIDAR_RAYS: int = 12                              # Number of Lidar rays per agent
     FLAT_BAND_BONUS: bool = False                       # Use a flat distance bonus inside the orbital band
@@ -80,16 +79,14 @@ class Config:
     WIND_GUST_STRENGTH: float = 0.03                        # Spatially/temporally varying gust amplitude
     RANDOM_WIND_DIRECTION: bool = True
 
-    # 5. Native Reward Weights (used when REWARD_MODE is 'none' or 'mixed'):
+    # 5. Native Reward Weights (used when REWARD_MODE is 'none'):
     W_DIST: float = 1.0
     W_PROX: float = 1.0
     W_V_REL: float = 1.0
     W_V_MAX: float = 1.0
 
     #---------------------------------- Agent Config --------------------------------#
-    # Agent architecture
-    MAPPO: bool = False                                     # Set to True to use MAPPO. False defaults to IPPO
-    MAPPO_SHARED_REW: bool = True                           # With MAPPO: True forces a team reward, False keeps SHARED_REW
+    # Agent architecture (IPPO: decentralised actor and critic, parameters shared over the agents)
     DEPTH: int = 2                                          # Number of hidden layers
     N_NODES: int = 256                                      # Number of neurons per layer
     ACTIVATION: Literal["Tanh", "ReLU", "Sigmoid"] = "Tanh" # Tanh works smoothly for bounded continuous control
@@ -113,10 +110,6 @@ class Config:
     LR: float = 3e-4                                        # Learning rate
     EPOCHS: int = 10                                        # Parameter update epochs per rollout
     MINIBATCH: int = 512                                    # Frames per minibatch (with 32 envs * 200 steps = 6400 frames)
-
-    def __post_init__(self):
-        if self.MAPPO and self.MAPPO_SHARED_REW:
-            self.SHARED_REW = True                          # MAPPO implies a team reward (unless MAPPO_SHARED_REW is False)
 
     def __getitem__(self, key):
         return self.__dict__[key]

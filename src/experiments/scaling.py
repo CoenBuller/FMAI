@@ -55,7 +55,7 @@ def main():
     a = p.parse_args()
     trace_dirs, out_dir = run_folders(p, a)
 
-    res, algo, trained = {}, "", set()                                   # res[label][n] = [info per seed]
+    res, trained = {}, set()                                   # res[label][n] = [info per seed]
     for js in sorted(js for d in trace_dirs for js in d.glob("*.json")):
         ckpt = agents_dir(js.parent) / js.with_suffix(".pt").name
         if not ckpt.exists():
@@ -67,7 +67,6 @@ def main():
             res.setdefault(option_label(cfg), {}).setdefault(n, []).append(info)
             print(f"[scaling] {js.stem} (trained on {cfg.NUM_AGENTS}) -> {n} agents: "
                   f"success {info['success_rate']:.2f}, pass {info['pass_rate']:.2f}, return {info['return_mean']:.2f}")
-        algo = "MAPPO" if cfg.MAPPO else "IPPO"
         trained.add(cfg.NUM_AGENTS)
     if not res:
         raise SystemExit("[scaling] nothing to test")
@@ -100,7 +99,7 @@ def main():
     for ax in axes[1]:
         ax.set_xlabel("Number of agents at test time")
     axes[0, 0].legend(fontsize=8)
-    fig.suptitle(f"{algo} | zero-shot scaling (trained on {', '.join(map(str, sorted(trained)))} agents, dashed) | "
+    fig.suptitle(f"IPPO | zero-shot scaling (trained on {', '.join(map(str, sorted(trained)))} agents, dashed) | "
                  f"mean ± std over seeds | {a.episodes} episodes per point (same envs)", fontsize=10)
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)

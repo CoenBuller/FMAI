@@ -18,12 +18,10 @@ class RobustnessReward(Transform):
     spec on that window. Only the last step is used. Undefined lags are NaN, which `Defined` turns into -inf.
     """
 
-    def __init__(self, spec, window, mode, coef, shared_rew=False):
+    def __init__(self, spec, window, shared_rew=False):
         super().__init__(in_keys=[], out_keys=[])
         self.spec = spec
         self.window = window
-        self.mode = mode
-        self.coef = coef
         self.hist = None                                             # [E, window+1, A, D]
         self.shared_rew = shared_rew
 
@@ -53,8 +51,7 @@ class RobustnessReward(Transform):
         else:
             rho_r = rho[..., None].expand_as(rew)
 
-        new = rew + self.coef * rho_r if self.mode == "mixed" else rho_r
-        next_tensordict.set(("agents", "reward"), new)
+        next_tensordict.set(("agents", "reward"), rho_r)
         return next_tensordict
 
 
@@ -67,7 +64,7 @@ def make_env(
     window=None
     ):
 
-    """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
+    """NavigationSFO with native reward. If `spec` is given and mode is 'rho', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
 
     # Use Config defaults while allowing callers (e.g. evaluation) to override them.
@@ -139,14 +136,8 @@ def make_env(
 
         
     transforms = [StepCounter(max_steps=cfg.MAX_STEPS)]              # time limit = truncation
-    if spec is not None and mode in ("rho", "mixed"):
-        rho_rew = RobustnessReward(
-            spec=spec,
-            window=window,
-            mode=mode,
-            coef=cfg.RHO_COEF,
-            shared_rew=cfg.SHARED_REW,
-        )
+    if spec is not None and mode == "rho":
+        rho_rew = RobustnessReward(spec=spec, window=window, shared_rew=cfg.SHARED_REW)
         transforms.append(rho_rew)
     return TransformedEnv(env, Compose(*transforms))
 

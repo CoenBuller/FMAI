@@ -82,7 +82,7 @@ class Agent():
                 obs_dim, 
                 1, 
                 n_agents=A, 
-                centralized=cfg.MAPPO,  
+                centralized=False,
                 share_params=True, 
                 depth=cfg.DEPTH, 
                 num_cells=cfg.N_NODES,

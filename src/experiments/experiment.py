@@ -38,7 +38,6 @@ def parse_args():
     )
     parser.add_argument("--scenario", type=str, default=None)
     parser.add_argument("--n_agents", type=int, default=None)
-    parser.add_argument("--mappo", type=str_to_bool, default=None)
     parser.add_argument("--shared_reward", type=str_to_bool, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--results_dir", type=str, default=None)
@@ -49,7 +48,7 @@ def parse_args():
     parser.add_argument("--wind_trained", type=str_to_bool, default=True)
     # Several options and seeds per call; for parallel runs (cluster.sbatch) one process per option/seed, all sharing
     # --run-id, then --compare-only
-    parser.add_argument("--modes", nargs="+", help="Options, run in order: none | rho[:spec] | mixed[:spec]")
+    parser.add_argument("--modes", nargs="+", choices=["none", "rho"], help="Options, run in order: none | rho")
     parser.add_argument("--seeds", type=int, help="Number of seeds per option (N_SEEDS)")
     parser.add_argument("--smooth", type=int, help="Moving-average window in eval points for compare plots (SMOOTH)")
     parser.add_argument("--run-id", help="Output folder name under traces/agents/gifs (default: timestamp)")
@@ -83,8 +82,6 @@ def cli_overrides(args):
         overrides["NUM_AGENTS"] = args.n_agents
     if args.seed is not None:
         overrides["SEED"] = args.seed
-    if args.mappo is not None:
-        overrides["MAPPO"] = args.mappo
     if args.shared_reward is not None:
         overrides["SHARED_REW"] = args.shared_reward
     if args.results_dir is not None:
@@ -108,20 +105,18 @@ def run_all(args, path="experiment.yaml"):
     base = Config(**{**e["config"], **overwrites})                   # resolved SEED, N_SEEDS
 
     for s, entry in itertools.product(range(base.N_SEEDS), args.modes or e["modes"]):   # all options per seed
-        mode, _, spec_name = entry.partition(":")                    # "rho:robustness" -> ("rho", "robustness")
-        merged_cfg = {**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id}
-        if spec_name:
-            merged_cfg["SPEC"] = spec_name
-        cfg = Config(**merged_cfg)
+        mode = entry
+        assert mode in ["none", "rho"], f"modes are 'none' or 'rho', got {mode}"
+        cfg = Config(**{**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id})
 
         spec, spec_desc = build_spec(cfg)
         reward_fn = None
         if isinstance(spec, GatedSpec):                              # GatedSpec: scored in train(), not in the env
-            reward_fn = spec.reward if mode in ["rho", "mixed"] else None
+            reward_fn = spec.reward if mode == "rho" else None
             spec = None                                              # eval then uses the spec-independent sfo_rho
         window = cfg.TAU_FLOCK if cfg.SCENARIO == "flocking" else (TAU1 + TAU2)
 
-        shaped = mode in ["rho", "mixed"]
+        shaped = mode == "rho"
         env = make_env(
             cfg,
             num_envs=cfg.NUM_ENVS,
@@ -160,7 +155,7 @@ def compare(args, path):
             results.setdefault(option_label(SimpleNamespace(**h["config"])), []).append(h["history"])
     if not results:
         raise SystemExit(f"[compare] no runs with id {args.run_id} under {cfg.RESULTS_DIR}")
-    title = (f"{cfg.SCENARIO} | {'MAPPO' if cfg.MAPPO else 'IPPO'} | {cfg.NUM_AGENTS} agents | "
+    title = (f"{cfg.SCENARIO} | IPPO | {cfg.NUM_AGENTS} agents | "
              f"{int(cfg.EPISODES):,} episodes")
     save_compare_plots(results, comparison_dir(cfg.RESULTS_DIR, args.run_id) / "compare",
                        smooth_k=cfg.SMOOTH, title=title)

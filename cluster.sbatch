@@ -13,7 +13,7 @@ set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
 EXPERIMENTS="IPPO_zones.yaml"                         # files in src/experiments/ (danger zones + inertia)
-MODES="rho"                                            # none | rho[:spec] | mixed[:spec]
+MODES="rho"                                            # none (native reward) | rho (robustness reward)
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
@@ -74,8 +74,7 @@ for exp in $EXPERIMENTS; do
     .venv/bin/python -m experiments.analyze --results "$RESULTS" --run-id "$rid" || echo "analysis failed for $exp"
     [ -z "$SCALE_AGENTS" ] || .venv/bin/python -m experiments.scaling --results "$RESULTS" --run-id "$rid" \
         --n-agents $SCALE_AGENTS || echo "scaling test failed for $exp"
+    # learning curves, final eval, steps to goal and spec rho per step of both options in one figure + table
+    .venv/bin/python -m experiments.summary --smooth "$SMOOTH" --results "$RESULTS" --run-id "$rid" || echo "summary failed for $exp"
 done
-# One figure + table over all experiments (e.g. IPPO and MAPPO): learning curves, final eval, steps to goal, spec rho
-.venv/bin/python -m experiments.summary --smooth "$SMOOTH" --results "$RESULTS" \
-    --run-ids $(for exp in $EXPERIMENTS; do echo "${SLURM_JOB_ID}_${exp%.yaml}"; done) || echo "summary failed"
-echo "Results in $OUT/${RESULTS#results/}/: <native|robustness|mixed>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"
+echo "Results in $OUT/${RESULTS#results/}/: <native|robustness>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"

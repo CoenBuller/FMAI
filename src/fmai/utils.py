@@ -67,9 +67,9 @@ def create_paths(base_dir, run_id, stem):
     return paths
 
 # Results layout. Flat (default):        <RESULTS_DIR>/{agents,gifs,traces,error}/<run_id>/
-# SPLIT_RESULTS (one folder per option): <RESULTS_DIR>/<native|robustness|mixed>/{agents,gifs,traces,error}/<run_id>/
-#                                        <RESULTS_DIR>/comparison/<run_id>/  (compare, analysis, scaling) + summaries
-OPTION_DIRS = {"none": "native", "rho": "robustness", "mixed": "mixed"}
+# SPLIT_RESULTS (one folder per option): <RESULTS_DIR>/<native|robustness>/{agents,gifs,traces,error}/<run_id>/
+#                                        <RESULTS_DIR>/comparison/<run_id>/  (compare, analysis, scaling, summary)
+OPTION_DIRS = {"none": "native", "rho": "robustness"}
 
 def run_root(cfg):
     """Folder that holds agents/, gifs/, traces/ and error/ of a run."""
@@ -87,8 +87,7 @@ def agents_dir(traces_dir):
     return Path(traces_dir).parent.parent / "agents" / Path(traces_dir).name
 
 def comparison_dir(results_dir, run_id=None):
-    """Where the figures over all options of a run go: comparison/<run_id> (split) or traces/<run_id> (flat).
-    Without run_id: the folder for summaries over several runs."""
+    """Where the figures over all options of a run go: comparison/<run_id> (split) or traces/<run_id> (flat)."""
     root = Path(results_dir)
     split = any(root.glob("*/traces")) or not (root / "traces").is_dir()
     base = root / "comparison" if split else root / "traces"
@@ -285,8 +284,7 @@ def save_plots(history, path):
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#8a5cd1", "#17becf", "#8c564b",
           "#7a7a7a"]
-OPTION_ORDER = ["native", "mixed_robustness", "rho_robustness", "mixed_coen", "rho_coen", "mixed_luc", "rho_luc", "mixed_future", "rho_future",
-                "mixed_zone", "rho_zone"]
+OPTION_ORDER = ["native", "rho_robustness"]
 
 def option_color(label):
     """Same colour for an option in every figure, however many options a run has."""

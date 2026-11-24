@@ -1,12 +1,13 @@
-"""Cross-algorithm summary: every (algorithm x reward option) of one or more run folders in one figure and one table.
+"""Summary of one run: every reward option (native, robustness) in one figure and one table.
 
-    PYTHONPATH=src python -m experiments.summary --results results/navigation --run-ids <id>_IPPO_zones <id>_MAPPO_zones
+    PYTHONPATH=src python -m experiments.summary --results results/navigation --run-id <run_id>
 
-(or --traces with the traces/<run_id> folders). Output: <results>/comparison/summary_<ids>.* (or --out).
+Finds the run like analyze.py (--results + --run-id, or --traces). Writes summary.png, summary.csv and summary.md
+into <results>/comparison/<run_id> (or --out).
 
-- summary.png: learning curves (eval metrics vs env steps), colour = reward option, line style = algorithm
-  (solid IPPO, dashed MAPPO), mean +/- std over seeds, each seed smoothed first (--smooth).
-- summary.csv / summary.md: per algorithm x option
+- summary.png: learning curves (eval metrics vs env steps), colour = reward option, mean +/- std over seeds,
+  each seed smoothed first (--smooth).
+- summary.csv / summary.md: per option
   * final evaluation (mean +/- std over seeds): native return, spec-independent robustness rho, pass rate, success,
     safety violations, collisions, zone entries, catastrophes;
   * rollouts of the final checkpoints on the same --episodes envs (as analyze.py): steps until an agent reaches its
@@ -33,20 +34,17 @@ CURVES = [("return_mean", "Eval return (native)"), ("rho_mean", "Eval robustness
 FINAL = [("return_mean", "return"), ("rho_mean", "rho"), ("pass_rate", "pass"), ("success_rate", "success"),
          ("violation_rate", "violations"), ("collision_steps", "collisions"), ("zone_entry_rate", "zone_entries"),
          ("catastrophes", "catastrophes")]
-STYLE = {"IPPO": "-", "MAPPO": "--"}
-
 
 def load(trace_dirs):
-    """-> {(algo, option): [(history, cfg_dict, json path), ...one per seed]}"""
+    """-> {option: [(history, cfg_dict, json path), ...one per seed]}"""
     fields = {f.name for f in dataclasses.fields(Config)}
     runs = {}
     for d in trace_dirs:
         for js in sorted(Path(d).glob("*.json")):
             data = json.load(open(js))
             cfg = Config(**{k: v for k, v in data["config"].items() if k in fields})
-            key = ("MAPPO" if cfg.MAPPO else "IPPO", option_label(cfg))
-            runs.setdefault(key, []).append((data["history"], data["config"], js))
-    order = lambda k: (k[0], OPTION_ORDER.index(k[1]) if k[1] in OPTION_ORDER else 99)
+            runs.setdefault(option_label(cfg), []).append((data["history"], data["config"], js))
+    order = lambda k: OPTION_ORDER.index(k) if k in OPTION_ORDER else 99
     return {k: runs[k] for k in sorted(runs, key=order)}
 
 
@@ -58,7 +56,7 @@ def ms(x):
 
 def main():
     p = argparse.ArgumentParser(prog="summary")
-    add_run_args(p, many=True)
+    add_run_args(p)
     p.add_argument("--smooth", type=int, default=5)
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=12345)
@@ -66,9 +64,6 @@ def main():
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
     trace_dirs, out = run_folders(p, a)
-    if a.traces and not a.out:
-        out = out.parent                                             # the folder above traces/<run_id>
-    tag = "_".join(a.run_ids) if a.run_ids and not a.traces else "_".join(dict.fromkeys(d.name for d in trace_dirs))
     runs = load(trace_dirs)
     if not runs:
         raise SystemExit("[summary] no runs found")
@@ -76,7 +71,7 @@ def main():
     # ------------------------------ learning curves ------------------------------
     curves = [c for c in CURVES if c[0] in next(iter(runs.values()))[0][0][-1]]
     fig, axes = plt.subplots(2, 3, figsize=(18, 9))
-    for (algo, label), seeds in runs.items():
+    for label, seeds in runs.items():
         hists = [h for h, _, _ in seeds]
         n = min(len(h) for h in hists)
         x = np.array([e["step"] for e in hists[0][:n]])
@@ -85,7 +80,7 @@ def main():
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 m, s = np.nanmean(ys, 0), np.nanstd(ys, 0)
-            ax.plot(x, m, STYLE.get(algo, ":"), color=option_color(label), lw=2, label=f"{algo} {label} ({len(hists)})")
+            ax.plot(x, m, color=option_color(label), lw=2, label=f"{label} ({len(hists)} seeds)")
             ax.fill_between(x, m - s, m + s, color=option_color(label), alpha=0.12, lw=0)
             ax.set(title=name, xlabel="Env steps")
     for ax in axes.flat[len(curves):]:
@@ -94,17 +89,16 @@ def main():
         ax.grid(True, alpha=0.3)
     axes.flat[1].axhline(0, color="gray", ls=":", lw=1)
     axes.flat[0].legend(fontsize=8)
-    fig.suptitle(f"All algorithms × reward options | solid = IPPO, dashed = MAPPO | mean ± std over seeds, "
-                 f"smoothing window {a.smooth}", fontsize=12)
+    fig.suptitle(f"IPPO | native vs robustness reward | mean ± std over seeds, smoothing window {a.smooth}", fontsize=12)
     fig.tight_layout()
     out.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out / f"summary_{tag}.png", dpi=150)
+    fig.savefig(out / "summary.png", dpi=150)
     plt.close(fig)
 
     # ------------------------------ table ------------------------------
     rows = []
-    for (algo, label), seeds in runs.items():
-        row = {"algorithm": algo, "option": label, "seeds": len(seeds)}
+    for label, seeds in runs.items():
+        row = {"option": label, "seeds": len(seeds)}
         for key, name in FINAL:
             if key in seeds[0][0][-1]:
                 row[f"{name}_mean"], row[f"{name}_std"] = ms([h[-1][key] for h, _, _ in seeds])
@@ -127,26 +121,26 @@ def main():
                 row["spec_rho_per_step_mean"], row["spec_rho_per_step_std"] = ms(r["total"])
                 row["frac_steps_spec_rho>=0"] = float((r["total"] >= 0).mean())
         rows.append(row)
-        print(f"[summary] {algo} {label} done")
+        print(f"[summary] {label} done")
 
     cols = list(dict.fromkeys(k for row in rows for k in row))
     fmt = lambda v: f"{v:.4f}" if isinstance(v, float) else str(v)
     lines = [",".join(cols)] + [",".join(fmt(row.get(c, "")) for c in cols) for row in rows]
-    (out / f"summary_{tag}.csv").write_text("\n".join(lines) + "\n")
+    (out / "summary.csv").write_text("\n".join(lines) + "\n")
 
     # Markdown: "mean ± std" per metric
     names = [c[:-5] for c in cols if c.endswith("_mean")]
     extra = [c for c in cols if c.startswith("frac_")]
-    hdr = ["algorithm", "option", "seeds"] + names + extra
+    hdr = ["option", "seeds"] + names + extra
     md = ["| " + " | ".join(hdr) + " |", "|" + "---|" * len(hdr)]
     for row in rows:
-        cells = [row["algorithm"], row["option"], str(row["seeds"])]
+        cells = [row["option"], str(row["seeds"])]
         cells += [f"{row[n + '_mean']:.3f} ± {row[n + '_std']:.3f}" if n + "_mean" in row else "" for n in names]
         cells += [f"{row[c]:.3f}" if c in row else "" for c in extra]
         md.append("| " + " | ".join(cells) + " |")
-    (out / f"summary_{tag}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (out / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
-    print(f"[summary] wrote {out}/summary_{tag}.png, .csv and .md")
+    print(f"[summary] wrote {out}/summary.png, .csv and .md")
 
 
 if __name__ == "__main__":

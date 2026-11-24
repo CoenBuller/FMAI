@@ -97,12 +97,12 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
 
 def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_fn=None, **kwargs):
     """reward_fn: optional td -> [E, T, A] robustness, computed on each collected batch (GatedSpec) and used
-    as the reward ('rho') or added to the native reward ('mixed') before the advantages are computed."""
+    as the reward ('rho') before the advantages are computed."""
     history = []
 
-    modes = {"rho": "robustness", "none": "reward", "mixed": "robustness & reward"}
+    modes = {"rho": "robustness", "none": "native reward"}
     mode = cfg.REWARD_MODE
-    assert mode in modes, f"Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
+    assert mode in modes, f"Possible modes are 'rho' or 'none'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     paths = create_paths(run_root(cfg), cfg.RUN_ID, stem)                   # see utils.run_root for the layout
@@ -153,8 +153,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
 
         if reward_fn is not None:                                                   # GatedSpec: score the finished batch
             rew = td["next", "agents", "reward"]                                    # [E, T, A, 1], native
-            rho = cfg.RHO_SCALE * reward_fn(td).unsqueeze(-1).to(rew.dtype)
-            td.set(("next", "agents", "reward"), rew + cfg.RHO_COEF * rho if mode == "mixed" else rho)
+            td.set(("next", "agents", "reward"), cfg.RHO_SCALE * reward_fn(td).unsqueeze(-1).to(rew.dtype))
 
         inf = td["next", "agents", "info"]
         train_return = inf["native_rew"].sum(dim=1).mean().item()                   # native return, whatever the mode
@@ -243,7 +242,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     collector.shutdown()
     p_bar.close()
     save_agent(agent, paths["Agent"])
-    gif_title = f"{'MAPPO' if cfg.MAPPO else 'IPPO'} | {mode} | seed {cfg.SEED}"
+    gif_title = f"IPPO | {modes[mode]} | seed {cfg.SEED}"
     save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)   # always
     return history
 
@@ -253,8 +252,8 @@ if __name__ == "__main__":
     from environment.environment import make_env
 
     cfg = Config(DEVICE="cuda", MAX_STEPS=150, NUM_ENVS=30, EPISODES=90, EVAL_EPISODES=10,
-                 EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, MAPPO=True, DEPTH=2, ENTROPY_COEF=1e-4,
-                 REWARD_MODE="mixed", RHO_COEF=1.0, RUN_ID=time.strftime("%Y%m%d_%H%M%S"))
+                 EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, DEPTH=2, ENTROPY_COEF=1e-4,
+                 REWARD_MODE="rho", RUN_ID=time.strftime("%Y%m%d_%H%M%S"))
     spec, spec_desc = build_spec(cfg=cfg)
 
     env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec, mode=cfg.REWARD_MODE, window=W)

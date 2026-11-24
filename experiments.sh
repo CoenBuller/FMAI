@@ -2,7 +2,6 @@
 
 RESULTS_DIR="results_2/flocking_wind"
 SEEDS="30 31 32 33 34"
-MAPPO="False"
 N_AGENTS="3"
 
 if [ -z "$1" ]; then
@@ -15,25 +14,22 @@ CONFIG_PATH="${1%.yaml}.yaml"
 mkdir -p "local_logs"
 
 run_one() {
-    local mappo="$1" n_agents="$2" seed="$3" results="$4"
+    local n_agents="$1" seed="$2" results="$3"
     local name="agents_${n_agents}_seed_${seed}"
     local log="local_logs/${name}.log"
 
     echo "[$(date +%H:%M:%S)] START $name -> $log"
     uv run -m src.experiments.experiment \
         --exp "$CONFIG_PATH" \
-        --mappo "$mappo" \
         --n_agents "$n_agents" \
         --seed "$seed" \
         --train "true" \
         --results_dir "$results" 2>&1 | tee "$log"
 }
 
-for alg in $MAPPO; do
-    for n in $N_AGENTS; do
-        for seed in $SEEDS; do
-            dir="$RESULTS_DIR/seed_${seed}"
-            run_one "$alg" "$n" "$seed" "$dir"
-        done
+for n in $N_AGENTS; do
+    for seed in $SEEDS; do
+        dir="$RESULTS_DIR/seed_${seed}"
+        run_one "$n" "$seed" "$dir"
     done
 done
