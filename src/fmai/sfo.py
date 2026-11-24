@@ -129,21 +129,23 @@ class GatedSpec:
     Specifically made for navigation environment.
     (1 = best achievable, 0 = about to violate, -1 = worst violation). Every term scores the state the action leads to:
          Prog_i  = h(d_i(before) - d_i(after)),  h: -1 at -v_max, 0 at v_min, 1 at v_max;  1 if within eps_g of the goal
-         Agent_i = f(min_{j != i} d_ij),          f: -1 at d_crit, 0 at d_safe, 1 at >= d_far
+         Agent_i = min_j [h_ij(t+1) - (1-gamma) h_ij(t)] / (gamma (d_far - d_safe)),  h_ij = d_ij - d_safe
+                   (barrier: >= 0 when every gap shrinks by at most a fraction gamma per step, so d_ij never drops
+                   below d_safe; gamma = drag / (1 - drag): the closing speed from which an agent can still coast to a stop)
          Zone_i  = g(min_k |p_i - z_k| - r),      g: -1 at zone_depth inside the edge, 0 at m_z outside it, 1 at >= zone_far
          rho_i   = Prog_i                         if Prog_i, Agent_i, Zone_i >= 0   (safe: go fast)
                    min(Prog_i, Agent_i, Zone_i)   otherwise                         (worst violation is the signal)
     Anticipation is left to the critic (GAE)."""
 
-    def __init__(self, v_max=0.039, v_min=0.01, eps_g=0.1, d_crit=0.20, d_safe=0.30, d_far=0.6,
+    def __init__(self, v_max=0.039, v_min=0.01, eps_g=0.1, d_safe=0.30, d_far=0.6, gamma=0.11,
                  zone_radius=0.25, m_z=0.0, zone_depth=0.1, zone_far=0.6):
         # v_min > 0 makes standing still negative; d_far, m_z, zone_depth: design choices
         self.v_max, self.v_min, self.eps_g = v_max, v_min, eps_g
-        self.d_crit, self.d_safe, self.d_far = d_crit, d_safe, d_far
+        self.d_safe, self.d_far, self.gamma = d_safe, d_far, gamma
         self.zone_r, self.m_z, self.zone_depth, self.zone_far = zone_radius, m_z, zone_depth, zone_far
 
     @classmethod
-    def from_config(cls, cfg, dt=0.1, substeps=2, u_range=1.0, agent_radius=0.1):   # VMAS Navigation defaults
+    def from_config(cls, cfg, dt=0.1, substeps=2, u_range=1.0):   # VMAS Navigation defaults
         """Take every parameter the env defines from cfg, so the spec follows the yaml."""
         if cfg is None:
             return cls()
@@ -151,7 +153,7 @@ class GatedSpec:
         # vel += u/mass * dt/substeps and pos += vel * dt/substeps. In steady state this moves:
         n, drag = substeps, cfg.DRAG
         v_max = u_range * dt ** 2 / (cfg.AGENT_MASS * drag) * (1 - drag * (n - 1) / (2 * n))
-        return cls(v_max=v_max, eps_g=cfg.GOAL_EPS, d_crit=2 * agent_radius, d_safe=cfg.SAFETY_DIST,
+        return cls(v_max=v_max, eps_g=cfg.GOAL_EPS, d_safe=cfg.SAFETY_DIST, gamma=drag / (1 - drag),
                    zone_radius=cfg.ZONE_RADIUS, zone_far=cfg.ZONE_LIDAR_RANGE)
 
     @staticmethod
@@ -169,8 +171,9 @@ class GatedSpec:
         prog = torch.where(dg <= self.eps_g, torch.ones_like(dg), self._pw(step, -self.v_max, self.v_min, self.v_max))
 
         A = pos.shape[2]
-        dij = torch.cdist(pos, pos) + torch.diag(torch.full((A,), float("inf"), device=pos.device))
-        agent = self._pw(dij.amin(dim=-1), self.d_crit, self.d_safe, self.d_far)
+        h, h_prev = torch.cdist(pos, pos) - self.d_safe, torch.cdist(pos_prev, pos_prev) - self.d_safe   # gap per pair
+        cbf = (h - (1 - self.gamma) * h_prev) / (self.gamma * (self.d_far - self.d_safe))   # [E, T, A, A]
+        agent = (cbf + torch.diag(torch.full((A,), float("inf"), device=pos.device))).amin(dim=-1).clamp(-1.0, 1.0)
 
         if zones is None:
             zone = torch.ones_like(dg)
@@ -191,10 +194,11 @@ class GatedSpec:
     def desc(self):
         return [
             r"$\rho_{Prog_i}(t) = h(d_i(t) - d_i(t+1))$, $h$: $-1@-v_{max},\ 0@v_{min},\ 1@v_{max}$ (1 at goal)",
-            r"$\rho_{Agent_i}(t) = f(\min_{j \neq i} d_{ij}(t+1))$, $f$: $-1@d_{crit},\ 0@d_{safe},\ 1@d_{far}$",
+            r"$\rho_{Agent_i}(t) = \min_{j \neq i} \frac{h_{ij}(t+1) - (1-\gamma)\,h_{ij}(t)}{\gamma\,(d_{far} - d_{safe})}$, "
+            r"$h_{ij} = d_{ij} - d_{safe}$",
             r"$\rho_{Zone_i}(t) = g(\min_k \lVert p_i(t+1) - z_k \rVert - r)$, $g$: $-1@-\delta_z,\ 0@m_z,\ 1@z_{far}$",
             r"$\rho_i = \rho_{Prog_i}$ if $\min(\cdot) \geq 0$, else $\min(\rho_{Prog_i}, \rho_{Agent_i}, \rho_{Zone_i})$",
-            rf"$v_{{max}} = {self.v_max:.4f},\ v_{{min}} = {self.v_min},\ d_{{crit}} = {self.d_crit},\ "
+            rf"$v_{{max}} = {self.v_max:.4f},\ v_{{min}} = {self.v_min},\ \gamma = {self.gamma:.3f},\ "
             rf"d_{{safe}} = {self.d_safe},\ d_{{far}} = {self.d_far},\ \delta_z = {self.zone_depth},\ m_z = {self.m_z},\ "
             rf"z_{{far}} = {self.zone_far}$",
         ]
