@@ -17,6 +17,7 @@ MODES="rho:gated3"                                     # none | rho[:spec] | mix
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
+SCALE_AGENTS="2 4 6 8"                                 # zero-shot scaling test on these numbers of agents ("" = skip)
 MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
@@ -71,6 +72,8 @@ for exp in $EXPERIMENTS; do
     $PY --exp "$exp" --run-id "$rid" --compare-only --smooth "$SMOOTH" $EXTRA || echo "compare failed for $exp"
     .venv/bin/python -m experiments.analyze --traces "results/luc/traces/$rid" --agents "results/luc/agents/$rid" \
         || echo "analysis failed for $exp"
+    [ -z "$SCALE_AGENTS" ] || .venv/bin/python -m experiments.scaling --traces "results/luc/traces/$rid" --n-agents $SCALE_AGENTS \
+        || echo "scaling test failed for $exp"
 done
 # One figure + table over all experiments (e.g. IPPO and MAPPO): learning curves, final eval, steps to goal, spec rho
 .venv/bin/python -m experiments.summary --smooth "$SMOOTH" --out "results/luc/traces" \

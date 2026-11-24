@@ -14,13 +14,13 @@ Every option is evaluated on the same spec-independent robustness, so the result
 
 One job runs **`IPPO_zones.yaml`** (danger zones + inertia, see below) × **`rho:gated3`** × **seeds 1–3** on one L40S on `ceratanium`,
 at most `MAX_PARALLEL` runs at a time.
-At the end it builds `compare.png`/`.csv`, the robustness analysis (`analysis.png`/`.csv`) and the summary (see below).
+At the end it builds `compare.png`/`.csv`, the robustness analysis (`analysis.png`/`.csv`), the zero-shot scaling test (`scaling.png`/`.csv`) and the summary (see below).
 
 ```bash
 bash submit.sh          # from this folder (WSL or Git Bash); copies the code to ~/fmai-ass1 on the cluster and runs sbatch
 ```
 
-What to run is set in the block at the top of `cluster.sbatch` (`EXPERIMENTS`, `MODES`, `SEEDS`, `SMOOTH`, `EXTRA`, `MAX_PARALLEL`).
+What to run is set in the block at the top of `cluster.sbatch` (see the variables under Flags).
 
 **On the cluster:**
 - Code, venv and uv cache are on `/local/$USER/fmai-ass1`.
@@ -55,68 +55,134 @@ Submit behind a running job: `SBATCH_ARGS="--dependency=afterany:<jobid>" bash s
 
 ## Running locally
 
+**Setup** (once): `uv sync`. `pyproject.toml` lists `qsfo` from `../artifact-fm-qsfo`; nothing imports it, but `uv sync`
+needs that folder (see `setup.sh`). The cluster job installs everything except qsfo.
+Run all commands from this folder with `PYTHONPATH=src`. The zones yamls use `DEVICE: "cuda"`; set `DEVICE: "cpu"` without a GPU.
+
+**The full navigation pipeline** (what `cluster.sbatch` does, but one run after the other):
+
 ```bash
-PYTHONPATH=src uv run python -m experiments.experiment --exp IPPO_zones.yaml \
-    --modes none rho:gated3 --seeds 3 --smooth 5 --train true
+export PYTHONPATH=src
+# 1. Train: IPPO and MAPPO x native and gated3 x 3 seeds (one run id per algorithm)
+uv run python -m experiments.experiment --exp IPPO_zones.yaml  --modes none rho:gated3 --seeds 3 --run-id ippo --train true
+uv run python -m experiments.experiment --exp MAPPO_zones.yaml --modes none rho:gated3 --seeds 3 --run-id mappo --train true
+# 2. Compare figure + table per run id
+uv run python -m experiments.experiment --exp IPPO_zones.yaml --run-id ippo --compare-only --smooth 5
+uv run python -m experiments.experiment --exp MAPPO_zones.yaml --run-id mappo --compare-only --smooth 5
+# 3. Robustness analysis of the final checkpoints (spec terms over time)
+uv run python -m experiments.analyze --traces results/luc/traces/ippo --agents results/luc/agents/ippo
+# 4. Zero-shot scaling: the same policies on 2, 4, 6 and 8 agents, without retraining
+uv run python -m experiments.scaling --traces results/luc/traces/ippo --n-agents 2 4 6 8
+# 5. One summary over both algorithms
+uv run python -m experiments.summary --traces results/luc/traces/ippo results/luc/traces/mappo
 ```
 
-`--exp` is a file in `src/experiments/`. Every flag below overrides the YAML value for that run.
-Note: `pyproject.toml` lists `qsfo` from `../artifact-fm-qsfo`. Nothing imports it, but `uv sync` needs that folder (see `setup.sh`).
-The cluster job installs everything except qsfo.
+For a quick check that everything runs, copy a zones yaml with `NUM_ENVS: 8`, `MAX_STEPS: 20`, `EPISODES: 16`,
+`MINIBATCH: 80`, `EVAL_EPISODES: 4`, `DEVICE: "cpu"` (a few seconds per run).
 
-## Flags (`experiments/experiment.py`)
+**Coen's flocking experiments** use the same entry point: `flocking.yaml` / `flocking_wind.yaml` with `--train true`
+(see `flocking_no_wind.sh`, `experiments.sh`). Without `--train`, the script runs his stress test of a saved flocking
+policy (`stresstest.sh`, `stresstest.yaml`, `plot_stresstest.py`).
 
-| Flag | Config field | Options / meaning |
+## Flags
+
+### `experiments/experiment.py` (training)
+
+`--exp` is a file in `src/experiments/`. Every other flag overrides the yaml value for that call.
+
+| Flag | Config field | Meaning |
 |---|---|---|
-| `--exp FILE` | – | **Required.** YAML in `src/experiments/` (`config:` block = Config fields, `modes:` = default options) |
-| `--modes ...` | YAML `modes` | Options, trained in this order: `none` (native reward), `rho[:spec]` (reward = spec robustness ρ), `mixed[:spec]` (native + `RHO_COEF`·ρ). Specs: `coen` (past-time, computed in the env at every step) and `gated3` (scored per agent on the finished batch, see `GatedSpec` in `sfo.py`). Labels in plots: `native`, `rho_coen`, `rho_gated3`, … |
+| `--exp FILE` | – | **Required.** Yaml in `src/experiments/` (`config:` block = Config fields, `modes:` = default options) |
+| `--train true` | – | **Needed to train.** Without it, the script runs Coen's (flocking) stress test |
+| `--modes ...` | yaml `modes` | Options, trained in this order: `none` (native reward), `rho[:spec]` (reward = spec robustness ρ), `mixed[:spec]` (native + `RHO_COEF`·ρ). Navigation always trains on `GatedSpec`; the `:gated3` suffix only names the run (`rho_gated3`). Flocking uses Coen's flocking spec |
 | `--seeds N` | `N_SEEDS` | Seeds `SEED … SEED+N−1` per option (default 1) |
 | `--seed N` | `SEED` | First seed |
-| `--smooth K` | `SMOOTH` | Moving-average window (in eval points) for the compare plots; `1` = off |
-| `--train true` | – | **Needed to train.** Without it `experiment.py` runs Coen's stress test of a saved flocking policy |
-| `--run-id ID` | `RUN_ID` | Output folder name (default: timestamp). Parallel runs share one ID |
+| `--run-id ID` | `RUN_ID` | Output folder name (default: timestamp). Parallel runs share one id |
 | `--compare-only` | – | No training: builds `compare.png` / `compare.csv` from the JSONs in `traces/<run-id>` |
+| `--smooth K` | `SMOOTH` | Moving-average window (in eval points) for the compare plots; `1` = off |
+| `--n_agents N` | `NUM_AGENTS` | Number of agents |
+| `--mappo true/false` | `MAPPO` | Centralised critic |
+| `--shared_reward true/false` | `SHARED_REW` | Team reward |
+| `--results_dir DIR` | `RESULTS_DIR` | Output root |
+| `--scenario S` | `SCENARIO` | `navigation` or `flocking` |
+| `--mode M` | `REWARD_MODE` | Stress test only (training takes the mode from `--modes` or the yaml) |
+| `--wind_strength X`, `--wind_gust_strength X` | `WIND_STRENGTH`, `WIND_GUST_STRENGTH` | Flocking only |
+| `--wind_trained true/false` | – | Stress test only: load the policy trained with or without wind |
 
-**Other Config fields** (`src/config.py`), settable in the YAML:
-- `GOAL_EPS` (0.1) and `SAFETY_DIST` (0.3): the eval robustness ρ = minᵢ min(maxₜ μ1ᵢ, minₜ μ2ᵢ[, minₜ μ3ᵢ]), i.e. every agent reaches its goal, never comes closer than `SAFETY_DIST` to another agent (and never enters a zone). It is the same for every option.
-- `RHO_COEF`: weight of ρ in `mixed`.
-- `EVAL_INTERVAL`: evaluate every N iterations, not episodes.
-- `EVAL_EPISODES`.
-- `EVAL_GIF`: a GIF at every eval. That's slow, and the final GIF is always saved anyway.
-- `MAPPO`: centralized critic. By default MAPPO forces a team reward (`SHARED_REW`); `MAPPO_zones.yaml` sets `MAPPO_SHARED_REW: False`, so IPPO and MAPPO differ only in the critic and every agent gets its own reward and ρ.
-- `ENTROPY_COEF`, `LR`, `EPOCHS`, `MINIBATCH` (must be ≤ `NUM_ENVS × MAX_STEPS`, or no update runs), …
+**Config fields** (`src/config.py`) that matter for navigation, settable in the yaml:
+- `GOAL_EPS` (0.1) and `SAFETY_DIST` (0.3): the eval robustness ρ = minᵢ min(maxₜ μ1ᵢ, minₜ μ2ᵢ[, minₜ μ3ᵢ]), i.e. every agent reaches its goal, never comes closer than `SAFETY_DIST` to another agent (and never enters a zone). It is the same for every option. `GatedSpec.from_config` also takes `GOAL_EPS`, `SAFETY_DIST`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `AGENT_MASS` and `DRAG` from the config.
+- `N_ZONES`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `CAT_PROB`, `CAT_PENALTY`, `AGENT_MASS`, `DRAG`: danger zones and inertia (see above).
+- `RHO_SCALE`: the gated reward is `RHO_SCALE`·ρ. `RHO_COEF`: weight of ρ in `mixed`.
+- `MAPPO`, `MAPPO_SHARED_REW`: by default MAPPO forces a team reward (`SHARED_REW`). `MAPPO_zones.yaml` sets `MAPPO_SHARED_REW: False`, so IPPO and MAPPO differ only in the critic and every agent gets its own reward and ρ.
+- `EVAL_INTERVAL` (every N iterations), `EVAL_EPISODES`, `EVAL_GIF` (a GIF at every eval; slow, and the final GIF is always saved anyway).
+- `ENTROPY_COEF`, `LR`, `EPOCHS`, `MINIBATCH` (must be ≤ `NUM_ENVS × MAX_STEPS`, or no update runs), `ACTIVATION` (`Tanh`, `ReLU`, `Sigmoid`), …
 
-## Robustness analysis (`experiments/analyze.py`)
+### `experiments/analyze.py` (robustness analysis)
 
-After training, every checkpoint of a run is rolled out on the **same 100 environments** (fixed seed, deterministic policy, no early stopping, all `MAX_STEPS`).
-The terms of the `gated3` spec (Prog, Agent, Zone) and the gated total are plotted over time per option, for the worst agent per episode, as mean ± 1 std over all episodes of all seeds.
+Every checkpoint of a run is rolled out on the **same environments** (fixed seed, deterministic policy, all `MAX_STEPS`).
+The terms of the `gated3` spec (Prog, Agent, Zone) and the gated total are plotted over time per option, for the worst
+agent per episode, as mean ± 1 std over all episodes of all seeds. Writes `analysis.png` and `analysis.csv` (per option:
+mean of each term, fraction of steps and of whole episodes with ρ ≥ 0, all agents at their goal at the end, progress per step).
 
-```bash
-PYTHONPATH=src uv run python -m experiments.analyze --traces results/luc/traces/<run_id> --agents results/luc/agents/<run_id>
-```
+| Flag | Default | Meaning |
+|---|---|---|
+| `--traces DIR` | required | `traces/<run_id>` |
+| `--agents DIR` | required | `agents/<run_id>` |
+| `--episodes N` | 100 | Environments per checkpoint |
+| `--seed N` | 12345 | Env seed, the same for every model |
+| `--out DIR` | `--traces` | Output folder |
+| `--device D` | cuda if available | |
 
-Flags: `--episodes` (100), `--seed` (12345, the env seed shared by all models), `--out` (default `--traces`), `--device`.
-It writes `analysis.png` and `analysis.csv` (per option: mean of each term, fraction of steps and of whole episodes with ρ ≥ 0, fraction of episodes with all agents on goal at the end, progress per step).
+### `experiments/scaling.py` (zero-shot scaling)
 
-## Summary over algorithms (`experiments/summary.py`)
+Every checkpoint of a run, trained with `NUM_AGENTS` agents, is evaluated **without retraining** on environments with
+other numbers of agents. This works because the policy shares its parameters over the agents and an agent's
+observation does not depend on the number of agents. The metrics are those of the normal evaluation (success, pass rate,
+return, safety violations, collisions, zone entries), as mean ± std over seeds. Writes `scaling.png` (metric vs number
+of agents; dashed line = the number it was trained on) and `scaling.csv`.
 
-All algorithm × reward combinations of one or more run folders in one figure and one table (the cluster job runs it at the end):
+| Flag | Default | Meaning |
+|---|---|---|
+| `--traces DIR` | required | `traces/<run_id>` |
+| `--n-agents N ...` | required | Numbers of agents to test on, e.g. `2 4 6 8` |
+| `--agents DIR` | `traces/<id>` → `agents/<id>` | Checkpoint folder |
+| `--episodes N` | 100 | Environments per number of agents |
+| `--seed N` | 12345 | Env seed, the same for every model |
+| `--out DIR` | `--traces` | Output folder |
+| `--device D` | cuda if available | |
 
-```bash
-PYTHONPATH=src uv run python -m experiments.summary --traces results/luc/traces/<id>_IPPO_zones results/luc/traces/<id>_MAPPO_zones
-```
+### `experiments/summary.py` (summary over algorithms)
 
-- `summary_<ids>.png`: learning curves for all combinations together (eval return, eval ρ, pass rate, success, safety violations, zone entries). Colour shows the reward option and line style the algorithm (solid IPPO, dashed MAPPO). Each curve is the mean ± std over seeds.
-- `summary_<ids>.csv` / `.md`: one row per combination:
-  - final eval as mean ± std over seeds;
-  - from rollouts of the final checkpoints on the same 100 envs: steps until an agent reaches its goal, steps until all agents have (mean ± std and the fraction that got there), and the spec ρ per step (worst agent, mean ± std).
-- Checkpoints come from `agents/<id>`; use `--agents` for another location or `--no-rollouts` to skip them.
-- Output goes to the parent of the first `--traces` folder unless you pass `--out`.
+All algorithm × reward combinations of one or more run folders in one figure and one table:
+- `summary_<ids>.png`: learning curves (eval return, eval ρ, pass rate, success, safety violations, zone entries). Colour = reward option, line style = algorithm (solid IPPO, dashed MAPPO), mean ± std over seeds.
+- `summary_<ids>.csv` / `.md`: per combination, the final eval (mean ± std over seeds) and, from rollouts of the final checkpoints on the same envs, the steps until an agent and until all agents reach their goal, and the spec ρ per step.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--traces DIR ...` | required | Run folders `traces/<run_id>` (e.g. IPPO and MAPPO) |
+| `--agents DIR ...` | `traces/<id>` → `agents/<id>` | Matching checkpoint folders |
+| `--out DIR` | parent of the first `--traces` | Output folder |
+| `--smooth K` | 5 | Moving average of the curves |
+| `--episodes N`, `--seed N` | 100, 12345 | Rollouts of the final checkpoints |
+| `--no-rollouts` | off | Only the curves and the final eval |
+| `--device D` | cuda if available | |
+
+### `cluster.sbatch` (variables at the top)
+
+| Variable | Meaning |
+|---|---|
+| `EXPERIMENTS` | Yamls to run, e.g. `"IPPO_zones.yaml MAPPO_zones.yaml"` |
+| `MODES` | Options, e.g. `"none rho:gated3"` |
+| `SEEDS` | e.g. `"1 2 3"` |
+| `SMOOTH` | Moving average of the compare plots |
+| `SCALE_AGENTS` | Numbers of agents for the zero-shot scaling test (`""` = skip) |
+| `EXTRA` | Extra flags for every training run |
+| `MAX_PARALLEL` | Runs at once on the GPU |
 
 ## Output
 
-All output goes under `RESULTS_DIR` (default `results/luc`):
-- `traces/<run_id>/`: per-run `<scenario>_<option>_seed<N>.json` (config + eval history) and `.png`, plus `compare.png` / `compare.csv` and `analysis.png` / `analysis.csv`.
+All output goes under `RESULTS_DIR` (`results/luc` in the zones yamls):
+- `traces/<run_id>/`: per-run `<scenario>_<option>_seed<N>.json` (config + eval history) and `.png`, plus `compare.png` / `compare.csv`, `analysis.png` / `analysis.csv` and `scaling.png` / `scaling.csv`.
 - `agents/<run_id>/`: checkpoints.
 - `gifs/<run_id>/`: a rollout GIF per run, saved after training (drawn with matplotlib when there is no display, e.g. on the cluster).
 - `error/`: skipped updates.
