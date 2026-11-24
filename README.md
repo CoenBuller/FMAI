@@ -80,9 +80,60 @@ uv run python -m experiments.summary --results results/navigation --run-ids ippo
 For a quick check that everything runs, copy a zones yaml with `NUM_ENVS: 8`, `MAX_STEPS: 20`, `EPISODES: 16`,
 `MINIBATCH: 80`, `EVAL_EPISODES: 4`, `DEVICE: "cpu"` (a few seconds per run).
 
-**Coen's flocking experiments** use the same entry point: `flocking.yaml` / `flocking_wind.yaml` with `--train true`
-(see `flocking_no_wind.sh`, `experiments.sh`). Without `--train`, the script runs his stress test of a saved flocking
-policy (`stresstest.sh`, `stresstest.yaml`, `plot_stresstest.py`).
+### Flocking (Coen's experiments)
+
+`SCENARIO: "flocking"` (`src/environment/flocking.py`): the agents follow a target that moves as a random walk. They must
+stay in a band around it (`TARGET_RADIUS`, `EPSILON_T`), keep `AGENT_DISTANCE` from each other and match its speed
+(`TARGET_REL_SPEED`, `EPSILON_V`, `V_MAX`), optionally under wind (`WIND_STRENGTH`, `WIND_GUST_STRENGTH`). The robustness
+reward uses Coen's flocking spec (`build_floc_spec` in `sfo.py`, recovery window `TAU_FLOCK`), not `GatedSpec`.
+Flocking yamls don't set `SPLIT_RESULTS`, so they use the flat layout (see [Output](#output)).
+
+| Yaml | Use |
+|---|---|
+| `flocking.yaml` | Training without wind (`modes: none, rho`) |
+| `flocking_wind.yaml` | Training with wind and gusts 0.15 |
+| `stresstest.yaml` | Evaluating saved policies under other wind / numbers of agents (`EVAL_EPISODES: 1000`) |
+
+**1. Train.** Use the same entry point as navigation, with `--train true`. One call trains every mode of the yaml
+(native and ρ) for one seed. The stress test (step 2) loads its checkpoints from the fixed folders
+`results/flocking/seed_<N>` (trained without wind) and `results/flocking_wind/seed_<N>` (with wind), so train into those:
+
+```bash
+export PYTHONPATH=src
+for s in 30 31 32; do
+  uv run python -m experiments.experiment --exp flocking.yaml      --seed $s --n_agents 4 --train true --results_dir results/flocking/seed_$s
+  uv run python -m experiments.experiment --exp flocking_wind.yaml --seed $s --n_agents 4 --train true --results_dir results/flocking_wind/seed_$s
+done
+```
+
+Each run writes `results/flocking[_wind]/seed_<N>/{agents,gifs,traces}/<run_id>/flocking_<mode>_seed<N>.*`.
+`--modes`, `--seeds`, `--run-id` and `--compare-only` work as for navigation.
+`flocking_no_wind.sh` and `experiments.sh` do the same loop (5 seeds, 3 agents), but write to `results_2/...`.
+The stress test does not look there, so change `RESULTS_DIR` in those scripts or move the folders.
+
+**2. Stress test** (no `--train`). This loads the newest checkpoint in
+`results/flocking[_wind]/seed_<N>/agents/<latest run_id>/flocking_<mode>_seed<N>.pt`. It evaluates the policy on
+`EVAL_EPISODES` new envs with the wind and number of agents you give, and writes one JSON to
+`<results_dir>/stresstest/seed_<N>/<mode>_<windtrained|nowindtrained>_n<A>_wind_<w>_gust_<g>.json`:
+
+```bash
+uv run python -m experiments.experiment --exp stresstest.yaml --mode rho --seed 30 --n_agents 6 \
+    --wind_trained true --wind_strength 0.22 --wind_gust_strength 0.22 --results_dir results_2
+```
+
+`stresstest.sh` runs the full grid: modes × seeds × 4–6 agents × trained with/without wind × wind × gusts.
+Usage: `bash stresstest.sh stresstest`. Its training runs must exist in `results/flocking[_wind]` (see above).
+
+**3. Plots.** Both scripts have their paths hard-coded at the bottom; run them from this folder:
+- `python plot_stresstest.py`: reads `results_2/stresstest/seed_*/*.json` and writes the pass-rate and return
+  matrices (wind × gusts × number of agents) to `results_2/images`. It also prints a summary table.
+- `python plots.py`: plots the learning curves of the training runs in `results_2/flocking/seed_*`
+  (native vs ρ) to `results_2/images`.
+- `gif_to_png.py`: `gif_contact_sheet(gif, out)` makes a contact sheet (a grid of frames) from a GIF, for the report.
+  The GIF path is hard-coded in the last line; edit it before running.
+
+`analyze.py`, `scaling.py` and `summary.py` are built for navigation (the gated spec and zones); don't use them on
+flocking runs.
 
 ## Flags
 
