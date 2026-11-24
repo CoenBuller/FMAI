@@ -6,6 +6,10 @@ from torchrl.envs.transforms import Transform
 
 from navigation_sfo import NavigationSFO
 
+from vmas.scenarios.navigation import Scenario
+from vmas.simulator.core import Agent
+
+from environment.flocking import StableFlocking
 
 class RobustnessReward(Transform):
     """Adds the team robustness of `spec` to the reward at every step, computed on the GPU inside the env.
@@ -16,7 +20,10 @@ class RobustnessReward(Transform):
 
     def __init__(self, spec, window, mode, coef, shared_rew=False):
         super().__init__(in_keys=[], out_keys=[])
-        self.spec, self.window, self.mode, self.coef = spec, window, mode, coef
+        self.spec = spec
+        self.window = window
+        self.mode = mode
+        self.coef = coef
         self.hist = None                                             # [E, window+1, A, D]
         self.shared_rew = shared_rew
 
@@ -51,33 +58,86 @@ class RobustnessReward(Transform):
         return next_tensordict
 
 
-def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
+def make_env(
+    cfg,
+    num_envs=None,
+    seed=None,
+    spec=None, 
+    mode=None,
+    window=None
+    ):
+
     """NavigationSFO with native reward. If `spec` is given and mode is 'rho' or 'mixed', the robustness is
     added to the reward inside the env. The eval env is built without a spec, so its reward stays native."""
-    env = VmasEnv(
-        scenario=NavigationSFO(),
-        num_envs=num_envs,
-        continuous_actions=cfg.CONTINUOUS_ACTIONS,
-        device=cfg.DEVICE,
-        seed=seed,
-        n_agents=cfg.NUM_AGENTS,
-        shared_rew=cfg.SHARED_REW,
-        reward="native",
-        eps=cfg.GOAL_EPS,
-        safety_distance=cfg.SAFETY_DIST,
-        early_stop=cfg.EARLY_STOP,
-        n_zones=cfg.N_ZONES,
-        zone_radius=cfg.ZONE_RADIUS,
-        zone_lidar_range=cfg.ZONE_LIDAR_RANGE,
-        cat_prob=cfg.CAT_PROB,
-        cat_penalty=cfg.CAT_PENALTY,
-        agent_mass=cfg.AGENT_MASS,
-        drag=cfg.DRAG,
-        spawn_spacing=0.4,
-        lambda1=1.0,
-        lambda2=1 / 0.3,
-        mu2_cap=0.2,
-    )
+
+    # Use Config defaults while allowing callers (e.g. evaluation) to override them.
+    if num_envs is None:
+        num_envs = cfg.NUM_ENVS
+    if seed is None:
+        seed = cfg.SEED
+    if mode is None:
+        mode = cfg.REWARD_MODE
+    if window is None:
+        window = cfg.TAU_FLOCK
+
+    if cfg["SCENARIO"] == "navigation":
+        env = VmasEnv(
+            scenario=NavigationSFO(),
+            num_envs=num_envs,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
+            device=cfg.DEVICE,
+            seed=seed,
+            n_agents=cfg.NUM_AGENTS,
+            shared_rew=cfg.SHARED_REW,
+            reward="native",
+            eps=cfg.GOAL_EPS,
+            safety_distance=cfg.SAFETY_DIST,
+            n_zones=cfg.N_ZONES,                                     # danger zones + inertia (navigation_sfo.py)
+            zone_radius=cfg.ZONE_RADIUS,
+            zone_lidar_range=cfg.ZONE_LIDAR_RANGE,
+            cat_prob=cfg.CAT_PROB,
+            cat_penalty=cfg.CAT_PENALTY,
+            agent_mass=cfg.AGENT_MASS,
+            drag=cfg.DRAG,
+            spawn_spacing=0.4,
+            lambda1=1.0,
+            lambda2=1 / 0.3,
+            mu2_cap=0.2,
+        )
+
+    elif cfg["SCENARIO"] == "flocking":
+        env = VmasEnv(
+            scenario=StableFlocking(),
+            num_envs=num_envs,
+            continuous_actions=cfg.CONTINUOUS_ACTIONS,
+            device=cfg.DEVICE,
+            seed=seed,
+            n_agents=cfg.NUM_AGENTS,
+            min_dist_between_entities=cfg.AGENT_DISTANCE,
+            n_lidar_rays=cfg.N_LIDAR_RAYS,
+            lidar_max_range=cfg.LIDAR_MAX_RANGE,
+            target_radius=cfg.TARGET_RADIUS,
+            epsilon_t=cfg.EPSILON_T,
+            spawn_in_band=cfg.SPAWN_IN_BAND,
+            flat_band_bonus=cfg.FLAT_BAND_BONUS,
+            observe_peers=cfg.OBSERVE_PEERS,
+            min_proximity=cfg.MIN_PROXIMITY,
+            target_rel_speed=cfg.TARGET_REL_SPEED,
+            epsilon_v=cfg.EPSILON_V,
+            v_max=cfg.V_MAX,
+            w_dist=cfg.W_DIST,
+            w_prox=cfg.W_PROX,
+            w_v_rel=cfg.W_V_REL,
+            w_v_max=cfg.W_V_MAX,
+            wind_strength=cfg.WIND_STRENGTH,
+            wind_gust_strength=cfg.WIND_GUST_STRENGTH,
+            random_wind_direction=cfg.RANDOM_WIND_DIRECTION,
+            target_speed_action=cfg.TARGET_SPEED_ACTION,
+            target_turn_rate=cfg.TARGET_TURN_RATE,
+            target_boundary_margin=cfg.TARGET_BOUNDARY_MARGIN,
+        )
+
+        
     transforms = [StepCounter(max_steps=cfg.MAX_STEPS)]              # time limit = truncation
     if spec is not None and mode in ("rho", "mixed"):
         rho_rew = RobustnessReward(
@@ -91,8 +151,9 @@ def make_env(cfg, num_envs, seed, spec=None, mode="none", window=5):
     return TransformedEnv(env, Compose(*transforms))
 
 if __name__ == "__main__":
-    from src.config import Config
-    from src.fmai.utils import *
+    from config import Config
+    from fmai.utils import *
+    from fmai.sfo import build_spec
 
     cfg = Config()
     spec, _ = build_spec()

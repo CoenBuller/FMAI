@@ -16,7 +16,7 @@ EXPERIMENTS="IPPO_zones.yaml"                         # files in src/experiments
 MODES="rho:gated3"                                     # none | rho[:spec] | mixed[:spec]
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
-EXTRA="--no-early-stop"                                # flags for every run, e.g. "--steps 2000000 --agents 4"
+EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
 MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
@@ -50,14 +50,14 @@ nvidia-smi
 
 # GIFs: there is no display on the node, so save_gif falls back to its matplotlib renderer.
 # At most MAX_PARALLEL runs at a time; the next one starts as soon as one finishes.
-PY=".venv/bin/python -m experiments.experiment"
+PY=".venv/bin/python -m experiments.experiment"     # --train true: without it experiment.py runs the stress test
 n=0; failed=0
 for exp in $EXPERIMENTS; do
     rid="${SLURM_JOB_ID}_${exp%.yaml}"
     for mode in $MODES; do
         for seed in $SEEDS; do
             while [ "$(jobs -rp | wc -l)" -ge "$MAX_PARALLEL" ]; do wait -n || failed=$((failed + 1)); done
-            $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --run-id "$rid" $EXTRA \
+            $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --run-id "$rid" --train true $EXTRA \
                 > "$LOGS/${rid}_${mode/:/_}_seed${seed}.log" 2>&1 &
             n=$((n + 1)); echo "Started run $n: $rid $mode seed $seed"
         done

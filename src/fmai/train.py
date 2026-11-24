@@ -22,9 +22,17 @@ def expand_done(td):
 
 # ----------------------------- evaluation -----------------------------
 
-def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_step: int, **kwargs):
-    """All metrics use only the first episode of each eval env (with early stopping, envs reset and continue).
-    spec=None -> spec-independent reference robustness from the scenario's mu1/mu2 (Config GOAL_EPS, SAFETY_DIST)."""
+def sfo_rho(inf):
+    """Spec-independent reference robustness per eval env: every agent eventually within GOAL_EPS of its goal (mu1),
+    never closer than SAFETY_DIST to another agent (mu2) and, with danger zones, never inside one (mu3) -> [E]."""
+    rho = torch.minimum(inf["mu1"].amax(dim=1), inf["mu2"].amin(dim=1))           # [E, A, 1]
+    if "mu3" in inf.keys():
+        rho = torch.minimum(rho, inf["mu3"].amin(dim=1))
+    return rho.squeeze(-1).amin(dim=-1)
+
+
+def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, **kwargs):
+    """spec=None -> spec-independent reference robustness (sfo_rho)."""
     with torch.no_grad():
         with set_exploration_type(ExplorationType.DETERMINISTIC):
             rollout = eval_env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
@@ -32,56 +40,63 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_step: int, **kw
 
     obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
     first_ep = (obs[..., 0, -1] == 0)                                    # [E, T]
-    m = first_ep[..., None]                                              # [E, T, 1]
+    mask = first_ep[..., None, None]                                     # [E, T, 1, 1]
 
     rew = rollout["next", "agents", "reward"]                            # native: the eval env has no shaping
-    ret = (rew * first_ep[..., None, None]).sum(dim=1).squeeze(-1)       # [E, A]
+    ret = (rew * mask).sum(dim=1).squeeze(-1)                            # [E, A]
 
-    # Reference metrics from the NavigationSFO info
-    inf = rollout["next", "agents", "info"]
-    mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)            # [E, T, A]
-    sep = mu2.masked_fill(~m, float("inf")).amin(dim=1).amin(dim=-1)     # [E], worst separation margin
-    all_at_goal = (mu1 >= 0).all(dim=-1)                                 # [E, T]
-    last = first_ep.sum(dim=1, keepdim=True) - 1                         # [E, 1], last step of the first episode
-
-    if spec is None:                                                     # every agent eventually reaches its goal AND never too close
-        reach = mu1.masked_fill(~m, float("-inf")).amax(dim=1)           # [E, A]
-        rho_env = torch.minimum(reach, mu2.masked_fill(~m, float("inf")).amin(dim=1)).amin(dim=-1)
-    else:
-        rho_env = rho_per_env(spec, rollout)                             # [E], first-order spec robustness
-    zone = {}
-    if "mu3" in inf.keys():                                              # danger zones: never inside any zone
-        zmin = inf["mu3"].squeeze(-1).masked_fill(~m, float("inf")).amin(dim=1).amin(dim=-1)   # [E]
-        if spec is None:
-            rho_env = torch.minimum(rho_env, zmin)
-        zone = {"zone_entry_rate": (zmin < 0).float().mean().item(),    # episodes in which any agent entered a zone
-                "catastrophes": (inf["catastrophe"].squeeze(-1) * m).sum(dim=(1, 2)).mean().item()}
+    rho_env = rho_per_env(spec, rollout) if spec is not None else sfo_rho(rollout["next", "agents", "info"])   # [E]
     pass_rate, _ = ms((rho_env >= 0).float())
     ret_mean, ret_std = ms(ret.mean(dim=1))
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))
     rho_mean, rho_std = ms(rho_env)
 
-    return {
-        "step": training_step,
+    # Reference metrics from scenario info
+    inf = rollout["next", "agents", "info"]
+    mu1, mu2 = inf["mu1"].squeeze(-1), inf["mu2"].squeeze(-1)            # [E, T, A]
+    sep = mu2.amin(dim=1).amin(dim=-1)                                   # [E], worst separation margin
+    all_at_goal = (mu1 >= 0).all(dim=-1)                                 # [E, T]
+
+    out = {
+        "episode": training_episode,
+        "step": training_episode * cfg.MAX_STEPS,
         "return_mean": ret_mean,
         "return_std": ret_std,
         "return_agent_std": ret_agent_std,
         "rho_mean": rho_mean,
         "rho_std": rho_std,
         "pass_rate": pass_rate,
-        "native_return": (inf["native_rew"].squeeze(-1) * m).sum(dim=1).mean().item(),
-        "success_rate": all_at_goal.gather(1, last).float().mean().item(),
+        "native_return": (inf["native_rew"] * mask).squeeze(-1).sum(dim=1).mean().item(),
+        "success_rate": all_at_goal[:, -1].float().mean().item(),
         "violation_rate": (sep < 0).float().mean().item(),
         "min_separation": (sep + 0.3).mean().item(),
-        "collision_steps": ((inf["collisions"].squeeze(-1) * m).sum(dim=(1, 2)) / 2).mean().item(),
-        **zone,
+        "collision_steps": (inf["collisions"].squeeze(-1).sum(dim=(1, 2)) / 2).mean().item(),
     }
+    if "mu3" in inf.keys():                                              # danger zones
+        out["zone_entry_rate"] = (inf["mu3"].amin(dim=(1, 2, 3)) < 0).float().mean().item()   # any agent entered a zone
+        out["catastrophes"] = inf["catastrophe"].squeeze(-1).sum(dim=(1, 2)).mean().item()
+
+    # Track individual reward components if present (r_d, r_p, r_v_rel, r_v_max)
+    rew_comps = {}
+    for k in ("r_d", "r_p", "r_v_rel", "r_v_max"):
+        if k in inf.keys():
+            rew_comps[k] = (inf[k] * mask).squeeze(-1).sum(dim=1).mean().item()
+    if rew_comps:
+        out["reward_components"] = rew_comps
+
+    # Track per-clause SFO robustness & failure rates (why an env fails)
+    sub_rho, sub_fail = sub_rho_per_env(spec, rollout)
+    if sub_rho:
+        out["sub_rho"] = sub_rho
+        out["sub_fail_rate"] = sub_fail
+
+    return out
 
 
 # ----------------------------- training -----------------------------
 
 def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_fn=None, **kwargs):
-    """reward_fn: optional td -> [E, T, A] robustness, computed on each collected batch (future-time specs) and used
+    """reward_fn: optional td -> [E, T, A] robustness, computed on each collected batch (GatedSpec) and used
     as the reward ('rho') or added to the native reward ('mixed') before the advantages are computed."""
     history = []
 
@@ -89,14 +104,14 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     mode = cfg.REWARD_MODE
     assert mode in modes, f"Possible modes are 'rho', 'none', or 'mixed'. You gave {mode}"
     print(f"\n======= mode: {modes[mode]} =======")
-    stem = f"{cfg.SCENARIO}_{option_label(cfg)}_seed{cfg.SEED}"
+    stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     paths = create_paths(cfg.RESULTS_DIR, cfg.RUN_ID, stem)
-    gif_title = f"{'MAPPO' if cfg.MAPPO else 'IPPO'} | {option_label(cfg)} | seed {cfg.SEED}"
 
     E = env.batch_size[0]
+    assert cfg.EPISODES >= E, f"EPISODES ({cfg.EPISODES}) is smaller than the number of envs ({E})"
+
     frames_per_batch = E * cfg.MAX_STEPS
-    n_iters = int(cfg.STEPS // frames_per_batch)                        # budget in env steps, not episodes
-    assert n_iters >= 1, f"STEPS ({cfg.STEPS}) is smaller than one batch (NUM_ENVS*MAX_STEPS = {frames_per_batch})"
+    n_iters = int(cfg.EPISODES // E)
     updates_per_iter = cfg.EPOCHS * (frames_per_batch // cfg.MINIBATCH)
 
     collector = Collector(
@@ -114,8 +129,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
         )
 
     p_bar = tqdm(
-        total=n_iters * frames_per_batch,
-        desc="Step",
+        total=n_iters * E, 
+        desc="Episode",
         bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
         colour='red'
         )
@@ -123,12 +138,11 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     STAT_KEYS = ["loss_total", "loss_objective", "loss_critic", "loss_entropy", "entropy", "kl_approx",
                  "grad_norm", "train_return", "train_reward", "skipped_updates"]
 
-    info0 = evaluate(eval_env, agent, spec, cfg, training_step=0)     # untrained agent
+    info0 = evaluate(eval_env, agent, spec, cfg, training_episode=0)     # untrained agent
     info0.update({k: float("nan") for k in STAT_KEYS})
     history.append(info0)
     save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
 
-    params = list(agent.loss_module.parameters())
     # Clip actor and critic gradients separately, so a large critic loss cannot eat the actor's share of the norm
     named = list(agent.loss_module.named_parameters())
     actor_params = [p for n, p in named if n.startswith("actor")]
@@ -137,15 +151,14 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     for it, td in enumerate(collector):                                             # td: [E, T], reward already shaped by the env
         expand_done(td)
 
-        if reward_fn is not None:                                                   # future-time spec: score the finished batch
+        if reward_fn is not None:                                                   # GatedSpec: score the finished batch
             rew = td["next", "agents", "reward"]                                    # [E, T, A, 1], native
             rho = cfg.RHO_SCALE * reward_fn(td).unsqueeze(-1).to(rew.dtype)
             td.set(("next", "agents", "reward"), rew + cfg.RHO_COEF * rho if mode == "mixed" else rho)
 
         inf = td["next", "agents", "info"]
-        per_ep = E / (E + td["next", "done"][:, :-1].sum().item())                  # per (partial) episode, as episodes can end early
-        train_return = inf["native_rew"].sum(dim=1).mean().item() * per_ep          # native return, whatever the mode
-        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item() * per_ep  # the reward the agent trains on
+        train_return = inf["native_rew"].sum(dim=1).mean().item()                   # native return, whatever the mode
+        train_reward = td["next", "agents", "reward"].sum(dim=1).mean().item()      # the reward the agent trains on
 
         assert torch.isfinite(td["next", "agents", "observation"]).all(), "NaN in obs"
         assert torch.isfinite(td["next", "agents", "reward"]).all(), "NaN in reward"
@@ -204,7 +217,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
         if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
 
             # Run evaluation episodes and store results
-            info = evaluate(eval_env, agent, spec, cfg, training_step=(it + 1) * frames_per_batch)
+            info = evaluate(eval_env, agent, spec, cfg, training_episode=(it + 1) * E)
             info.update(train_stats)
             history.append(info)
 
@@ -216,33 +229,34 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
             # For progress bar
             post = {
                 "ret": f"{info['native_return']:.2f}", 
-                "succ": f"{info['success_rate']:.2f}",
-                "ent": f"{info['entropy']:.2f}"
-                }
-            if mode in ["rho", "mixed"]:
-                post["rho"] = f"{info['rho_mean']:.3f}"
-            p_bar.set_postfix(**post) # type: ignore
+                "pass": f"{info['pass_rate']:.2f}",
+                "rho": f"{info['rho_mean']:.3f}",
+            }
+            p_bar.set_postfix(**post)  # type: ignore
 
             # Save gif if cfg.EVAL_GIF == True
             if cfg.EVAL_GIF:
-                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)
+                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
 
-        p_bar.update(n=frames_per_batch)
+        p_bar.update(n=E)
 
     collector.shutdown()
     p_bar.close()
     save_agent(agent, paths["Agent"])
-    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)       # was paths["Agent"], which overwrote the checkpoint
+    gif_title = f"{'MAPPO' if cfg.MAPPO else 'IPPO'} | {mode} | seed {cfg.SEED}"
+    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)   # always
     return history
+
 
 if __name__ == "__main__":
     import time
     from environment.environment import make_env
 
-    spec, spec_desc = build_spec("coen")
     cfg = Config(DEVICE="cuda", MAX_STEPS=150, NUM_ENVS=30, EPISODES=90, EVAL_EPISODES=10,
                  EVAL_INTERVAL=1, EPOCHS=2, MINIBATCH=450, MAPPO=True, DEPTH=2, ENTROPY_COEF=1e-4,
                  REWARD_MODE="mixed", RHO_COEF=1.0, RUN_ID=time.strftime("%Y%m%d_%H%M%S"))
+    spec, spec_desc = build_spec(cfg=cfg)
+
     env = make_env(cfg, cfg.NUM_ENVS, cfg.SEED, spec=spec, mode=cfg.REWARD_MODE, window=W)
     eval_env = make_env(cfg, cfg.EVAL_EPISODES, cfg.SEED + 1000)
     torch.manual_seed(cfg.SEED)

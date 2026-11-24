@@ -44,7 +44,7 @@ class WeightedRobustness:
         self.weights = weights or [1 / len(formulas)] * len(formulas)
         self.clip = clip
     @torch.no_grad()
-    def __call__(self, obs):                             # obs: [E, T, A, D] -> rho: [E, T, A] (one value per agent)
+    def __call__(self, obs):                             # obs: [E, T, A, D] -> rho: [E, T]
         rho = 0.0
         for w, f in zip(self.weights, self.formulas):
             rho = rho + w * f(obs).clamp(-self.clip, self.clip)

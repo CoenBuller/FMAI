@@ -17,6 +17,7 @@ dependencies = [
     "vmas>=1.5.2",
     "qsfo",
     "pyyaml>=6.0.3",
+    "pandas>=3.1.1",
 ]
 
 [project.scripts]

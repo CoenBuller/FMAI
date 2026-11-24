@@ -2,6 +2,7 @@ modes: [none, rho:gated3]
 
 # passed straight into the Config dataclass (field names must match)
 config:
+    RESULTS_DIR: "results/luc"
     RENDER: False
     DEVICE: "cuda"
     EVAL_INTERVAL: 3                                  # Eval every 3 PPO iterations (of NUM_ENVS*MAX_STEPS steps) -> ~37 points
@@ -26,7 +27,6 @@ config:
     CAT_PENALTY: 15.0                                 # ... worth -15: crossing costs about as much as the detour
     AGENT_MASS: 2.5                                   # Same top speed as mass 1 / drag 0.25, about 2.5x the inertia
     DRAG: 0.1
-    EARLY_STOP: False
     SHARED_REW: False
 
     #---------------------------------- Agent Config ----------------------------------#
@@ -35,7 +35,7 @@ config:
     MAPPO: False                                      # Set to True to use MAPPO. False defaults to IPPO
     DEPTH: 2                                          # Number of hidden layers
     N_NODES: 256                                      # Number of neurons per layer
-    ACTIVATION: "ReLu"                                # Activation function
+    ACTIVATION: "ReLU"                                # Activation function
     
     # PPO Loss
     CLIP_EPS: 0.2                                     # Clipping parameter for PPO loss

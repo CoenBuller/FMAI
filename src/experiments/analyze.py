@@ -1,6 +1,6 @@
 """Post-training robustness analysis: every checkpoint of a run is rolled out on the same EPISODES environments
-(fixed seed, deterministic policy, no early stopping, full MAX_STEPS), and the terms of the future-time spec
-(Prog, Rec, Safe) and the total robustness are plotted over time, per option: mean +/- 1 std over all episodes of
+(fixed seed, deterministic policy, full MAX_STEPS), and the terms of the gated spec (GatedSpec: Prog, Agent,
+Zone) and the total robustness are plotted over time, per option: mean +/- 1 std over all episodes of
 all seeds. The value per episode and step is the worst agent (min over agents), as the spec must hold for all.
 
     PYTHONPATH=src python -m experiments.analyze --traces results/luc/traces/<run_id> --agents results/luc/agents/<run_id>
@@ -20,20 +20,21 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 from config import Config
 from environment.environment import make_env
 from fmai.agents import Agent
-from fmai.sfo import FutureSpec, ZoneSpec
+from fmai.sfo import GatedSpec
 from fmai.utils import option_label, option_color, OPTION_ORDER
 
-TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("rec", r"$\rho_{Rec}$: spacing recovery"),
-         ("safe", r"$\rho_{Safe}$: hard safety"), ("total", r"$\rho$: total robustness")]
-ZONE_TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("rec", r"$\rho_{Rec}$: spacing recovery"),
-              ("safe", r"$\rho_{Safe}$: hard safety"), ("zone", r"$\rho_{Zone}$: danger zones"),
-              ("total", r"$\rho$: total robustness"), ("in_zone", "fraction of agents inside a zone")]
+TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("agent", r"$\rho_{Agent}$: agent spacing"),
+         ("total", r"$\rho$: total robustness")]
+ZONE_TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("agent", r"$\rho_{Agent}$: agent spacing"),
+              ("zone", r"$\rho_{Zone}$: danger zones"), ("total", r"$\rho$: total robustness"),
+              ("in_zone", "fraction of agents inside a zone")]
 
 
 def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
     fields = {f.name for f in dataclasses.fields(Config)}
     cfg = Config(**{k: v for k, v in cfg_dict.items() if k in fields})
-    cfg.DEVICE, cfg.EARLY_STOP = device, False
+    cfg.DEVICE = device
+    cfg.ACTIVATION = {"ReLu": "ReLU"}.get(cfg.ACTIVATION, cfg.ACTIVATION)   # runs from before the yaml fix
     env = make_env(cfg, episodes, seed)                                  # same seed -> same spawns for every model
     agent = Agent()
     agent.make_agent(env=env, cfg=cfg)
@@ -41,11 +42,8 @@ def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
         td = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy, break_when_any_done=False)
     inf = td["next", "agents", "info"]
-    if cfg.N_ZONES:                                                      # normalised spec with the zone term
-        terms = ZoneSpec(zone_radius=cfg.ZONE_RADIUS).terms(inf["pos"], inf["goal"], td["next", "done"],
-                                                            inf["zones"][..., 0, :, :])
-    else:
-        terms = FutureSpec().terms(inf["pos"], inf["goal"], td["next", "done"])   # [E, T, A]
+    zones = inf["zones"][..., 0, :, :] if cfg.N_ZONES else None
+    terms = GatedSpec.from_config(cfg).terms(inf["pos"], inf["goal"], td["agents", "info", "pos"], zones)
     out = {k: v.amin(dim=-1).cpu().numpy() for k, v in terms.items()}   # worst agent -> [E, T]
     if cfg.N_ZONES:
         inside = inf["mu3"].reshape(*inf["mu3"].shape[:3]) < 0           # [E, T, A]
@@ -121,8 +119,8 @@ def main():
     for ax in axes[1]:
         ax.set_xlabel("Time step")
     axes[0, 0].legend(fontsize=8)
-    fig.suptitle(f"{algo} | {'normalised zone' if zones else 'future-time'} spec terms over time | worst agent per episode | mean ± 1 std over "
-                 f"{a.episodes} episodes × seeds (same envs, no early stop)", fontsize=10)
+    fig.suptitle(f"{algo} | gated spec terms over time | worst agent per episode | mean ± 1 std over "
+                 f"{a.episodes} episodes × seeds (same envs)", fontsize=10)
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_dir / "analysis.png", dpi=150)
