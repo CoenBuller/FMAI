@@ -21,7 +21,7 @@ class Config:
     HORIZON: int = 200
     EVAL_GIF: bool = False
     RHO_SCALE: float = 1.0                                  # GatedSpec: reward rho is multiplied by this (rho and mixed)
-    SPEC: str = "gated3"                                    # Spec name in the run labels (rho_gated3); navigation uses GatedSpec
+    SPEC: str = "robustness"                                # Spec name in the run labels (rho_robustness); navigation uses GatedSpec
     N_SEEDS: int = 1                                        # Seeds SEED .. SEED + N_SEEDS - 1 are run per option (experiment.py)
     SMOOTH: int = 1                                         # Moving-average window (in eval points) for the compare plots; 1 = off
 

@@ -108,7 +108,7 @@ def run_all(args, path="experiment.yaml"):
     base = Config(**{**e["config"], **overwrites})                   # resolved SEED, N_SEEDS
 
     for s, entry in itertools.product(range(base.N_SEEDS), args.modes or e["modes"]):   # all options per seed
-        mode, _, spec_name = entry.partition(":")                    # "rho:gated3" -> ("rho", "gated3")
+        mode, _, spec_name = entry.partition(":")                    # "rho:robustness" -> ("rho", "robustness")
         merged_cfg = {**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id}
         if spec_name:
             merged_cfg["SPEC"] = spec_name

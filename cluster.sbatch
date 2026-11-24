@@ -13,7 +13,7 @@ set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
 EXPERIMENTS="IPPO_zones.yaml"                         # files in src/experiments/ (danger zones + inertia)
-MODES="rho:gated3"                                     # none | rho[:spec] | mixed[:spec]
+MODES="rho"                                            # none | rho[:spec] | mixed[:spec]
 SEEDS="1 2 3"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"

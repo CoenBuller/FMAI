@@ -257,7 +257,7 @@ def save_plots(history, path):
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#8a5cd1", "#17becf", "#8c564b",
           "#7a7a7a"]
-OPTION_ORDER = ["native", "mixed_gated3", "rho_gated3", "mixed_coen", "rho_coen", "mixed_luc", "rho_luc", "mixed_future", "rho_future",
+OPTION_ORDER = ["native", "mixed_robustness", "rho_robustness", "mixed_coen", "rho_coen", "mixed_luc", "rho_luc", "mixed_future", "rho_future",
                 "mixed_zone", "rho_zone"]
 
 def option_color(label):

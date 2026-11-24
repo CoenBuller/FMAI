@@ -12,7 +12,7 @@ Every option is evaluated on the same spec-independent robustness, so the result
 
 ## The current experiment (LIACS cluster)
 
-One job runs **`IPPO_zones.yaml`** (danger zones + inertia, see below) × **`rho:gated3`** × **seeds 1–3** on one L40S on `ceratanium`,
+One job runs **`IPPO_zones.yaml`** (danger zones + inertia, see below) × **`rho`** (robustness reward) × **seeds 1–3** on one L40S on `ceratanium`,
 at most `MAX_PARALLEL` runs at a time.
 At the end it builds `compare.png`/`.csv`, the robustness analysis (`analysis.png`/`.csv`), the zero-shot scaling test (`scaling.png`/`.csv`) and the summary (see below).
 
@@ -42,7 +42,7 @@ An augmented Navigation (`src/navigation_sfo.py`):
 - **Danger zones:** `N_ZONES: 2` circles (`ZONE_RADIUS: 0.25`) per episode, on the straight path of random agents, never on a spawn or goal. Agents can drive through them. They see zones through a second 12-ray LiDAR (`ZONE_LIDAR_RANGE: 0.6`, appended to the observation; inside a zone every ray reads 0).
 - **Catastrophe:** each step inside a zone, with probability `CAT_PROB: 0.002` (1/500), the native reward gets `-CAT_PENALTY` (15). That is the only zone signal in the native reward. The value is balanced with scripted controllers (straight through vs around, γ = 0.99): the expected discounted catastrophe cost of crossing (about 2.8 % per crossing) roughly equals the discounted cost of the detour (about 0.36).
 - **Inertia:** `AGENT_MASS: 2.5`, `DRAG: 0.1`. Same top speed as the default (mass 1, drag 0.25), but about 26 instead of 10 steps to reach it and a coasting distance of 0.35 instead of 0.12.
-- **Spec `gated3`** (`GatedSpec` in `sfo.py`): one-step terms per agent, each normalised to [−1, 1] (0 = just satisfied, 1 = comfortably):
+- **Robustness reward** (`GatedSpec` in `sfo.py`): one-step terms per agent, each normalised to [−1, 1] (0 = just satisfied, 1 = comfortably):
   - Prog: progress towards the goal in the last step (1 within `eps_g` of the goal), Agent: distance to the nearest agent, Zone: signed distance to the nearest zone edge.
   - Gate: if every term is ≥ 0 the reward is Prog, otherwise it is the worst term.
   - Scored on the true positions after the rollout (`reward_fn` in `train()`), not in the env.
@@ -63,9 +63,9 @@ Run all commands from this folder with `PYTHONPATH=src`. The zones yamls use `DE
 
 ```bash
 export PYTHONPATH=src
-# 1. Train: IPPO and MAPPO x native and gated3 x 3 seeds (one run id per algorithm)
-uv run python -m experiments.experiment --exp IPPO_zones.yaml  --modes none rho:gated3 --seeds 3 --run-id ippo --train true
-uv run python -m experiments.experiment --exp MAPPO_zones.yaml --modes none rho:gated3 --seeds 3 --run-id mappo --train true
+# 1. Train: IPPO and MAPPO x native and robustness reward x 3 seeds (one run id per algorithm)
+uv run python -m experiments.experiment --exp IPPO_zones.yaml  --modes none rho --seeds 3 --run-id ippo --train true
+uv run python -m experiments.experiment --exp MAPPO_zones.yaml --modes none rho --seeds 3 --run-id mappo --train true
 # 2. Compare figure + table per run id
 uv run python -m experiments.experiment --exp IPPO_zones.yaml --run-id ippo --compare-only --smooth 5
 uv run python -m experiments.experiment --exp MAPPO_zones.yaml --run-id mappo --compare-only --smooth 5
@@ -94,7 +94,7 @@ policy (`stresstest.sh`, `stresstest.yaml`, `plot_stresstest.py`).
 |---|---|---|
 | `--exp FILE` | – | **Required.** Yaml in `src/experiments/` (`config:` block = Config fields, `modes:` = default options) |
 | `--train true` | – | **Needed to train.** Without it, the script runs Coen's (flocking) stress test |
-| `--modes ...` | yaml `modes` | Options, trained in this order: `none` (native reward), `rho[:spec]` (reward = spec robustness ρ), `mixed[:spec]` (native + `RHO_COEF`·ρ). Navigation always trains on `GatedSpec`; the `:gated3` suffix only names the run (`rho_gated3`). Flocking uses Coen's flocking spec |
+| `--modes ...` | yaml `modes` | Options, trained in this order: `none` (native reward), `rho[:spec]` (reward = spec robustness ρ), `mixed[:spec]` (native + `RHO_COEF`·ρ). Navigation always trains on `GatedSpec` (`SPEC: robustness`, labels `rho_robustness`, `mixed_robustness`). Flocking uses Coen's flocking spec |
 | `--seeds N` | `N_SEEDS` | Seeds `SEED … SEED+N−1` per option (default 1) |
 | `--seed N` | `SEED` | First seed |
 | `--run-id ID` | `RUN_ID` | Output folder name (default: timestamp). Parallel runs share one id |
@@ -120,7 +120,7 @@ policy (`stresstest.sh`, `stresstest.yaml`, `plot_stresstest.py`).
 ### `experiments/analyze.py` (robustness analysis)
 
 Every checkpoint of a run is rolled out on the **same environments** (fixed seed, deterministic policy, all `MAX_STEPS`).
-The terms of the `gated3` spec (Prog, Agent, Zone) and the gated total are plotted over time per option, for the worst
+The terms of the robustness spec (Prog, Agent, Zone) and the gated total are plotted over time per option, for the worst
 agent per episode, as mean ± 1 std over all episodes of all seeds. Writes `analysis.png` and `analysis.csv` (per option:
 mean of each term, fraction of steps and of whole episodes with ρ ≥ 0, all agents at their goal at the end, progress per step).
 
@@ -172,7 +172,7 @@ All algorithm × reward combinations of one or more run folders in one figure an
 | Variable | Meaning |
 |---|---|
 | `EXPERIMENTS` | Yamls to run, e.g. `"IPPO_zones.yaml MAPPO_zones.yaml"` |
-| `MODES` | Options, e.g. `"none rho:gated3"` |
+| `MODES` | Options, e.g. `"none rho"` |
 | `SEEDS` | e.g. `"1 2 3"` |
 | `SMOOTH` | Moving average of the compare plots |
 | `SCALE_AGENTS` | Numbers of agents for the zero-shot scaling test (`""` = skip) |
