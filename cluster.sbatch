@@ -12,13 +12,13 @@
 set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
-EXPERIMENTS="IPPO_zones.yaml"                         # files in src/experiments/ (danger zones + inertia)
-MODES="rho"                                            # none (native reward) | rho (robustness reward)
-SEEDS="1 2 3"
+EXPERIMENTS="IPPO_zones.yaml flocking_wind.yaml"      # files in src/experiments/
+MODES="none rho"                                       # none (native reward) | rho (robustness reward)
+SEEDS="1 2 3 4 5"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
-RESULTS="results/navigation"                           # RESULTS_DIR of the yamls (navigation, SPLIT_RESULTS)
-SCALE_AGENTS="2 4 6 8"                                 # zero-shot scaling test on these numbers of agents ("" = skip)
+SCALE_AGENTS="2 4 5 6 7 8"                             # zero-shot scaling test on these numbers of agents ("" = skip)
+ANALYSIS_EPISODES=20                                   # test envs per checkpoint for the robustness-over-time analysis
 MAX_PARALLEL=6                                         # runs at once on the GPU (30 at once ran out of its 44 GB)
 # ----------------------------------------------------------------------------------------
 
@@ -70,11 +70,12 @@ echo "$failed of $n runs failed (see $LOGS)"
 
 for exp in $EXPERIMENTS; do
     rid="${SLURM_JOB_ID}_${exp%.yaml}"
+    RESULTS=$(grep -m1 RESULTS_DIR "src/experiments/$exp" | cut -d'"' -f2)    # results/navigation, results/flocking
     $PY --exp "$exp" --run-id "$rid" --compare-only --smooth "$SMOOTH" $EXTRA || echo "compare failed for $exp"
-    .venv/bin/python -m experiments.analyze --results "$RESULTS" --run-id "$rid" || echo "analysis failed for $exp"
+    .venv/bin/python -m experiments.analyze --results "$RESULTS" --run-id "$rid" --episodes "$ANALYSIS_EPISODES" || echo "analysis failed for $exp"
     [ -z "$SCALE_AGENTS" ] || .venv/bin/python -m experiments.scaling --results "$RESULTS" --run-id "$rid" \
         --n-agents $SCALE_AGENTS || echo "scaling test failed for $exp"
     # learning curves, final eval, steps to goal and spec rho per step of both options in one figure + table
     .venv/bin/python -m experiments.summary --smooth "$SMOOTH" --results "$RESULTS" --run-id "$rid" || echo "summary failed for $exp"
 done
-echo "Results in $OUT/${RESULTS#results/}/: <native|robustness>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"
+echo "Results in $OUT/{navigation,flocking}/: <native|robustness>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"

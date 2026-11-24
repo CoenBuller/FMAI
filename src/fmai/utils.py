@@ -26,13 +26,13 @@ def first_episode_mask(obs):                                 # [E,T] True for st
     return obs[..., 0, -1] == 0
 
 # Used during the evaluation run.
-def rho_per_env(spec, rollout):
-    """Evaluation robustness: worst robustness per environment (after the first W steps) -> [E]."""
+def rho_per_agent(spec, rollout):
+    """Evaluation robustness: worst robustness over time per environment and agent (after the first W steps) -> [E, A]."""
     obs = with_episode_ids(rollout["next", "agents", "observation"], rollout["next", "done"])
     rho = spec(obs)                                          # [E,T,A]
     valid = first_episode_mask(obs).clone()
     valid[:, :W] = False                                     # lags undefined at the start
-    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=(1, 2))
+    return rho.masked_fill(~valid[..., None], float("inf")).amin(dim=1)
 
 @torch.no_grad()
 def sub_rho_per_env(spec, rollout):
@@ -124,27 +124,21 @@ def save_history(history, path):
         json.dump(history, f, indent=2)
     tmp.replace(path)  
 
-def save_gif(eval_env, agent, max_steps, path, fps=30, title="", zone_radius=0.25):
-    """Roll out env 0 of eval_env for one deterministic episode and save it as a GIF."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def gif_style(cfg):
+    """draw_frames arguments of a scenario."""
+    return dict(radius=0.05 if cfg.SCENARIO == "flocking" else 0.1, zone_radius=cfg.ZONE_RADIUS)
 
-    # Use native VMAS rgb_array rendering if 'pos' is not in info, otherwise draw_frames
-    frames = []
-    def render_cb(env, td):
-        frames.append(eval_env.render(mode="rgb_array", agent_index_focus=None, env_index=0))
-
+def save_gif(eval_env, agent, max_steps, path, fps=30, **kw):
+    """Roll out eval env 0 for one deterministic episode and save it as a GIF."""
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
-        td = eval_env.rollout(
-            max_steps=max_steps,
-            policy=None if agent is None else agent.policy,
-            break_when_any_done=False,
-            callback=render_cb,
-        )
-    if not frames and "pos" in td["next", "agents", "info"].keys():
-        frames = draw_frames(td, title=title, zone_radius=zone_radius)
-    if frames:
-        ImageSequenceClip(frames, fps=fps).write_gif(str(path), logger=None)
+        td = eval_env.rollout(max_steps=max_steps, policy=agent.policy, break_when_any_done=False)
+    save_eval_gif(td, path, n_envs=1, fps=fps, **kw)
+
+def save_eval_gif(td, path, n_envs=5, fps=15, **kw):
+    """The first n_envs envs of a rollout side by side in one GIF."""
+    clips = [draw_frames(td, env_index=i, **kw) for i in range(n_envs)]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    ImageSequenceClip([np.concatenate(f, axis=1) for f in zip(*clips)], fps=fps).write_gif(str(path), logger=None)
 
 def draw_frames(td, env_index=0, radius=0.1, title="", zone_radius=0.25):
     """Frames of one env's first episode: danger zones (red), goals (pale), trails, agents, catastrophes (X)."""

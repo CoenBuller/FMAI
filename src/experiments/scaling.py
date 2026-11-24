@@ -22,10 +22,12 @@ from config import Config
 from environment.environment import make_env
 from fmai.agents import Agent
 from fmai.train import evaluate
+from fmai.sfo import build_spec
 from fmai.utils import option_label, option_color, OPTION_ORDER, agents_dir
 from experiments.analyze import add_run_args, run_folders
 
 METRICS = [("success_rate", "Success (all agents at goal at the end)"), ("pass_rate", "Pass rate (ρ ≥ 0)"),
+           ("agent_pass_rate", "Per-agent pass rate"),
            ("return_mean", "Eval return (native)"), ("violation_rate", "Safety violation rate"),
            ("collision_steps", "Collisions per episode"), ("zone_entry_rate", "Zone entry rate")]
 
@@ -42,7 +44,8 @@ def zero_shot(cfg_dict, ckpt, n_agents, episodes, seed, device):
     agent.make_agent(env=env, cfg=cfg)                                   # the critic is built for n_agents but unused
     agent.policy.load_state_dict(torch.load(ckpt, map_location=device)["policy"])
     cfg.NUM_AGENTS = trained                                             # keep the label/title on the trained setting
-    return cfg, evaluate(env, agent, None, cfg, training_episode=0)
+    spec = build_spec(cfg)[0] if cfg.SCENARIO == "flocking" else None     # as in training: flocking spec, else sfo_rho
+    return cfg, evaluate(env, agent, spec, cfg, training_episode=0)
 
 
 def main():
@@ -73,7 +76,7 @@ def main():
 
     labels = sorted(res, key=lambda l: OPTION_ORDER.index(l) if l in OPTION_ORDER else 99)
     metrics = [(k, name) for k, name in METRICS if k in next(iter(next(iter(res.values())).values()))[0]]
-    fig, axes = plt.subplots(2, 3, figsize=(17, 8), sharex=True)
+    fig, axes = plt.subplots(2, 4, figsize=(22, 8), sharex=True)
     ns = np.array(a.n_agents)
     rows = []
     for label in labels:

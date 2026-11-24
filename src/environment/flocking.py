@@ -349,6 +349,8 @@ class StableFlocking(BaseScenario):
             "r_p": agent.r_p,
             "r_v_rel": agent.r_v_rel,
             "r_v_max": agent.r_v_max,
+            "pos": agent.state.pos,                       # for the GIFs (utils.draw_frames)
+            "goal": self._target.state.pos,
         }
 
 

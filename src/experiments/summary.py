@@ -29,9 +29,12 @@ from fmai.utils import option_label, option_color, smooth, OPTION_ORDER, agents_
 from experiments.analyze import rollout_terms, add_run_args, run_folders
 
 CURVES = [("return_mean", "Eval return (native)"), ("rho_mean", "Eval robustness ρ (spec-independent)"),
-          ("pass_rate", "Pass rate (ρ ≥ 0)"), ("success_rate", "Success (all agents at goal)"),
+          ("pass_rate", "Pass rate (ρ ≥ 0)"), ("agent_pass_rate", "Per-agent pass rate"),
+          ("success_rate", "Success (all agents at goal)"),
           ("violation_rate", "Safety violation rate"), ("zone_entry_rate", "Zone entry rate")]
-FINAL = [("return_mean", "return"), ("rho_mean", "rho"), ("pass_rate", "pass"), ("success_rate", "success"),
+BARS = [("pass_rate", "Pass rate"), ("violation_rate", "Safety violations"), ("zone_entry_rate", "Zone entries")]
+FINAL = [("return_mean", "return"), ("rho_mean", "rho"), ("pass_rate", "pass"), ("agent_pass_rate", "agent_pass"),
+         ("success_rate", "success"),
          ("violation_rate", "violations"), ("collision_steps", "collisions"), ("zone_entry_rate", "zone_entries"),
          ("catastrophes", "catastrophes")]
 
@@ -70,7 +73,7 @@ def main():
 
     # ------------------------------ learning curves ------------------------------
     curves = [c for c in CURVES if c[0] in next(iter(runs.values()))[0][0][-1]]
-    fig, axes = plt.subplots(2, 3, figsize=(18, 9))
+    fig, axes = plt.subplots(2, 4, figsize=(22, 9))
     for label, seeds in runs.items():
         hists = [h for h, _, _ in seeds]
         n = min(len(h) for h in hists)
@@ -111,17 +114,35 @@ def main():
                     continue
                 _, _, o = rollout_terms(cfg_dict, ckpt, a.episodes, a.seed, a.device)
                 for k in ["t_goal_agent", "t_goal_all", "total"]:
-                    r.setdefault(k, []).append(o[k].ravel())
+                    if k in o:                                       # flocking has no goals
+                        r.setdefault(k, []).append(o[k].ravel())
             if r:
                 r = {k: np.concatenate(v) for k, v in r.items()}
-                row["steps_to_goal_agent_mean"], row["steps_to_goal_agent_std"] = ms(r["t_goal_agent"])
-                row["frac_agents_reached"] = float((~np.isnan(r["t_goal_agent"])).mean())
-                row["steps_all_at_goal_mean"], row["steps_all_at_goal_std"] = ms(r["t_goal_all"])
-                row["frac_episodes_all_reached"] = float((~np.isnan(r["t_goal_all"])).mean())
+                if "t_goal_agent" in r:
+                    row["steps_to_goal_agent_mean"], row["steps_to_goal_agent_std"] = ms(r["t_goal_agent"])
+                    row["frac_agents_reached"] = float((~np.isnan(r["t_goal_agent"])).mean())
+                    row["steps_all_at_goal_mean"], row["steps_all_at_goal_std"] = ms(r["t_goal_all"])
+                    row["frac_episodes_all_reached"] = float((~np.isnan(r["t_goal_all"])).mean())
                 row["spec_rho_per_step_mean"], row["spec_rho_per_step_std"] = ms(r["total"])
                 row["frac_steps_spec_rho>=0"] = float((r["total"] >= 0).mean())
         rows.append(row)
         print(f"[summary] {label} done")
+
+    # ------------------------------ bar plot of the final evaluation ------------------------------
+    bars = [b for b in BARS if b[0] in next(iter(runs.values()))[0][0][-1]]
+    fig, ax = plt.subplots(figsize=(2.5 * len(bars) + 2, 4.5))
+    w = 0.8 / len(runs)
+    for j, (label, seeds) in enumerate(runs.items()):
+        v = np.array([[h[-1][k] for k, _ in bars] for h, _, _ in seeds])           # [seeds, metrics]
+        ax.bar(np.arange(len(bars)) + (j - (len(runs) - 1) / 2) * w, v.mean(0), w, yerr=v.std(0), capsize=4,
+               color=option_color(label), label=f"{label} ({len(seeds)} seeds)")
+    ax.set_xticks(range(len(bars)), [n for _, n in bars])
+    ax.set(ylim=(0, 1.05), ylabel="Fraction of eval episodes", title="Final evaluation | mean ± std over seeds")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out / "bars.png", dpi=150)
+    plt.close(fig)
 
     cols = list(dict.fromkeys(k for row in rows for k in row))
     fmt = lambda v: f"{v:.4f}" if isinstance(v, float) else str(v)
@@ -140,7 +161,7 @@ def main():
         md.append("| " + " | ".join(cells) + " |")
     (out / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
-    print(f"[summary] wrote {out}/summary.png, .csv and .md")
+    print(f"[summary] wrote {out}/summary.png, bars.png, .csv and .md")
 
 
 if __name__ == "__main__":

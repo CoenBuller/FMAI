@@ -107,7 +107,8 @@ def run_all(args, path="experiment.yaml"):
     for s, entry in itertools.product(range(base.N_SEEDS), args.modes or e["modes"]):   # all options per seed
         mode = entry
         assert mode in ["none", "rho"], f"modes are 'none' or 'rho', got {mode}"
-        cfg = Config(**{**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id})
+        cfg = Config(**{**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id,
+                        "EVAL_GIF": base.EVAL_GIF and base.SEED + s == e["config"].get("SEED", 1)})   # GIFs: first seed
 
         spec, spec_desc = build_spec(cfg)
         reward_fn = None

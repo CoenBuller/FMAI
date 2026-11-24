@@ -23,15 +23,15 @@ def expand_done(td):
 
 def sfo_rho(inf):
     """Spec-independent reference robustness per eval env: every agent eventually within GOAL_EPS of its goal (mu1),
-    never closer than SAFETY_DIST to another agent (mu2) and, with danger zones, never inside one (mu3) -> [E]."""
+    never closer than SAFETY_DIST to another agent (mu2) and, with danger zones, never inside one (mu3) -> [E, A]."""
     rho = torch.minimum(inf["mu1"].amax(dim=1), inf["mu2"].amin(dim=1))           # [E, A, 1]
     if "mu3" in inf.keys():
         rho = torch.minimum(rho, inf["mu3"].amin(dim=1))
-    return rho.squeeze(-1).amin(dim=-1)
+    return rho.squeeze(-1)                                                          # [E, A]
 
 
-def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, **kwargs):
-    """spec=None -> spec-independent reference robustness (sfo_rho)."""
+def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, gif=None, **kwargs):
+    """spec=None -> spec-independent reference robustness (sfo_rho). gif: path for a GIF of the first 5 eval envs."""
     with torch.no_grad():
         with set_exploration_type(ExplorationType.DETERMINISTIC):
             rollout = eval_env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy,
@@ -44,7 +44,11 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
     rew = rollout["next", "agents", "reward"]                            # native: the eval env has no shaping
     ret = (rew * mask).sum(dim=1).squeeze(-1)                            # [E, A]
 
-    rho_env = rho_per_env(spec, rollout) if spec is not None else sfo_rho(rollout["next", "agents", "info"])   # [E]
+    rho_agent = rho_per_agent(spec, rollout) if spec is not None else sfo_rho(rollout["next", "agents", "info"])   # [E, A]
+    rho_env = rho_agent.amin(dim=-1)                                     # the spec must hold for every agent
+    if gif is not None:
+        title = f"{'native' if cfg.REWARD_MODE == 'none' else 'robustness'} | step {training_episode * cfg.MAX_STEPS:,}"
+        save_eval_gif(rollout, gif, title=title, **gif_style(cfg))
     pass_rate, _ = ms((rho_env >= 0).float())
     ret_mean, ret_std = ms(ret.mean(dim=1))
     _, ret_agent_std = ms(ret.std(dim=1, correction=0))
@@ -65,6 +69,7 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, *
         "rho_mean": rho_mean,
         "rho_std": rho_std,
         "pass_rate": pass_rate,
+        "agent_pass_rate": (rho_agent >= 0).float().mean().item(),    # fraction of agents whose own spec holds
         "native_return": (inf["native_rew"] * mask).squeeze(-1).sum(dim=1).mean().item(),
         "success_rate": all_at_goal[:, -1].float().mean().item(),
         "violation_rate": (sep < 0).float().mean().item(),
@@ -137,7 +142,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     STAT_KEYS = ["loss_total", "loss_objective", "loss_critic", "loss_entropy", "entropy", "kl_approx",
                  "grad_norm", "train_return", "train_reward", "skipped_updates"]
 
-    info0 = evaluate(eval_env, agent, spec, cfg, training_episode=0)     # untrained agent
+    gif_at = lambda step: paths["Gif"].parent / paths["Gif"].stem / f"step_{step:08d}.gif" if cfg.EVAL_GIF else None
+    info0 = evaluate(eval_env, agent, spec, cfg, training_episode=0, gif=gif_at(0))     # untrained agent
     info0.update({k: float("nan") for k in STAT_KEYS})
     history.append(info0)
     save_history({"config": vars(cfg), "formulas": spec_desc, "history": history}, paths["History"])
@@ -215,7 +221,8 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
         if (it + 1) % cfg.EVAL_INTERVAL == 0 or it == n_iters - 1:
 
             # Run evaluation episodes and store results
-            info = evaluate(eval_env, agent, spec, cfg, training_episode=(it + 1) * E)
+            info = evaluate(eval_env, agent, spec, cfg, training_episode=(it + 1) * E,
+                            gif=gif_at((it + 1) * E * cfg.MAX_STEPS))
             info.update(train_stats)
             history.append(info)
 
@@ -232,15 +239,11 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
             }
             p_bar.set_postfix(**post)  # type: ignore
 
-            # Save gif if cfg.EVAL_GIF == True
-            if cfg.EVAL_GIF:
-                save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30)
-
         p_bar.update(n=E)
 
     collector.shutdown()
     p_bar.close()
     save_agent(agent, paths["Agent"])
     gif_title = f"IPPO | {modes[mode]} | seed {cfg.SEED}"
-    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], fps=30, title=gif_title, zone_radius=cfg.ZONE_RADIUS)   # always
+    save_gif(eval_env, agent, cfg.MAX_STEPS, paths["Gif"], title=gif_title, **gif_style(cfg))   # always
     return history

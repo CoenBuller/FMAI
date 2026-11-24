@@ -22,14 +22,12 @@ from torchrl.envs.utils import set_exploration_type, ExplorationType
 from config import Config
 from environment.environment import make_env
 from fmai.agents import Agent
-from fmai.sfo import GatedSpec
-from fmai.utils import option_label, option_color, OPTION_ORDER, find_traces, agents_dir, comparison_dir
+from fmai.sfo import GatedSpec, build_spec
+from fmai.utils import option_label, option_color, OPTION_ORDER, find_traces, agents_dir, comparison_dir, with_episode_ids
 
-TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("agent", r"$\rho_{Agent}$: agent spacing"),
-         ("total", r"$\rho$: total robustness")]
-ZONE_TERMS = [("prog", r"$\rho_{Prog}$: goal progress"), ("agent", r"$\rho_{Agent}$: agent spacing"),
-              ("zone", r"$\rho_{Zone}$: danger zones"), ("total", r"$\rho$: total robustness"),
-              ("in_zone", "fraction of agents inside a zone")]
+NAMES = {"prog": r"$\rho_{Prog}$: goal progress", "agent": r"$\rho_{Agent}$: agent spacing",
+         "zone": r"$\rho_{Zone}$: danger zones", "total": r"$\rho$: total robustness",
+         "in_zone": "fraction of agents inside a zone"}             # flocking: the names of its sub-formulas
 
 
 def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
@@ -44,9 +42,18 @@ def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
     with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
         td = env.rollout(max_steps=cfg.MAX_STEPS, policy=agent.policy, break_when_any_done=False)
     inf = td["next", "agents", "info"]
-    zones = inf["zones"][..., 0, :, :] if cfg.N_ZONES else None
-    terms = GatedSpec.from_config(cfg).terms(inf["pos"], inf["goal"], td["agents", "info", "pos"], zones)
+    if cfg.SCENARIO == "flocking":                                       # Coen's spec: its sub-formulas and the total
+        spec, _ = build_spec(cfg)
+        obs = with_episode_ids(td["next", "agents", "observation"], td["next", "done"])
+        terms = {n: f(obs).clamp(-spec.clip, spec.clip) for n, f in spec.sub_formulas.items()}
+        terms["total"] = spec(obs)
+    else:
+        zones = inf["zones"][..., 0, :, :] if cfg.N_ZONES else None
+        terms = GatedSpec.from_config(cfg).terms(inf["pos"], inf["goal"], td["agents", "info", "pos"], zones)
     out = {k: v.amin(dim=-1).cpu().numpy() for k, v in terms.items()}   # worst agent -> [E, T]
+    out.update({k + "_avg": v.mean(dim=-1).cpu().numpy() for k, v in terms.items()})   # agent average -> [E, T]
+    if cfg.SCENARIO == "flocking":
+        return option_label(cfg), cfg, out
     if cfg.N_ZONES:
         inside = inf["mu3"].reshape(*inf["mu3"].shape[:3]) < 0           # [E, T, A]
         out["in_zone"] = inside.float().mean(-1).cpu().numpy()          # fraction of agents inside, [E, T]
@@ -113,34 +120,40 @@ def main():
         raise SystemExit("[analyze] nothing to analyse")
 
     labels = sorted(res, key=lambda l: OPTION_ORDER.index(l) if l in OPTION_ORDER else 99)
-    zones = "zone_entry" in next(iter(res.values()))
-    terms = ZONE_TERMS if zones else TERMS
-    fig, axes = plt.subplots(2, 3 if zones else 2, figsize=(17 if zones else 12, 8), sharex=True)
+    first = next(iter(res.values()))
+    zones = "zone_entry" in first
+    terms = [k for k in first if not k.endswith("_avg") and first[k][0].ndim == 2]   # curves over time
+    fig, axes = plt.subplots(2, 3, figsize=(17, 8), sharex=True)
     t = np.arange(1, T + 1)
     rows = []
     for label in labels:
         r = {k: np.concatenate(v) for k, v in res[label].items()}       # seeds pooled: [seeds * episodes, T]
         n_seeds = len(res[label]["total"])
-        for ax, (key, name) in zip(axes.flat, terms):
+        for ax, key in zip(axes.flat, terms):
             m, s = r[key].mean(0), r[key].std(0)
             ax.plot(t, m, color=option_color(label), lw=2, label=f"{label} ({n_seeds} seeds)")
             ax.fill_between(t, m - s, m + s, color=option_color(label), alpha=0.15, lw=0)
-            ax.set_title(name)
+            if key + "_avg" in r:
+                ax.plot(t, r[key + "_avg"].mean(0), "--", color=option_color(label), lw=1.5)
+            ax.set_title(NAMES.get(key, key))
         rows.append({"option": label, "seeds": n_seeds, "episodes": r["total"].shape[0],
-                     **{f"{k}_mean": round(float(r[k].mean()), 4) for k, _ in terms},
+                     **{f"{k}_mean": round(float(np.nanmean(r[k])), 4) for k in terms},
+                     **{f"{k}_agent_avg_mean": round(float(np.nanmean(r[k + "_avg"])), 4) for k in terms if k + "_avg" in r},
                      "frac_steps_rho>=0": round(float((r["total"] >= 0).mean()), 4),
                      "frac_episodes_rho>=0_all_steps": round(float((r["total"] >= 0).all(1).mean()), 4),
-                     "all_at_goal_at_end": round(float(r["at_goal_end"].mean()), 4),
-                     "progress_per_step": round(float(r["speed"].mean()), 4),
+                     **({"all_at_goal_at_end": round(float(r["at_goal_end"].mean()), 4),
+                         "progress_per_step": round(float(r["speed"].mean()), 4)} if "speed" in r else {}),
                      **({"zone_entry_rate": round(float(r["zone_entry"].mean()), 4),
                          "catastrophes_per_episode": round(float(r["catastrophes"].mean()), 4)} if zones else {})})
+    for ax in axes.flat[len(terms):]:
+        ax.set_visible(False)
     for ax in axes.flat:
         ax.axhline(0, color="gray", ls=":", lw=1)
         ax.grid(True, alpha=0.3)
     for ax in axes[1]:
         ax.set_xlabel("Time step")
     axes[0, 0].legend(fontsize=8)
-    fig.suptitle(f"IPPO | gated spec terms over time | worst agent per episode | mean ± 1 std over "
+    fig.suptitle(f"IPPO | {cfg.SCENARIO} spec terms over time | worst agent (solid, ± 1 std) and agent average (dashed) | over "
                  f"{a.episodes} episodes × seeds (same envs)", fontsize=10)
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
