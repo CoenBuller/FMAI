@@ -247,8 +247,6 @@ results/<navigation|flocking>/
     └── stresstest/              # flocking only: matrices and deltas of the stress test
 ```
 
-Run ids: navigation `ippo` (or the job id on the cluster), flocking `no_wind` and `wind`.
-
-Older runs without `SPLIT_RESULTS` (`results/luc`, and Coen's earlier `results/flocking/seed_*`, `results/flocking_wind`,
-`results/stresstest`, `results/images`, `results/hyperparam`) keep everything of a run in
-`RESULTS_DIR/{agents,gifs,traces,error}/<run_id>/`. The compare, analyze and scaling scripts still read that layout.
+Run ids: navigation `ippo` (or the job id on the cluster), flocking `no_wind` and `wind`. The repo holds only the
+final run, `25097_IPPO_zones` and `25097_flocking_wind` (cluster job 25097). Without `SPLIT_RESULTS` a run is kept in
+`RESULTS_DIR/{agents,gifs,traces,error}/<run_id>/`; the compare, analyze and scaling scripts read that layout too.
