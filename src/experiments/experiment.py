@@ -46,6 +46,7 @@ def parse_args():
     parser.add_argument("--train", type=str_to_bool, default=False)
     parser.add_argument("--mode", type=str, default=None)
     parser.add_argument("--wind_trained", type=str_to_bool, default=True)
+    parser.add_argument("--eval_gif", type=str_to_bool, default=None, help="GIF at every evaluation (EVAL_GIF)")
     # Several options and seeds per call; for parallel runs (cluster.sbatch) one process per option/seed, all sharing
     # --run-id, then --compare-only
     parser.add_argument("--modes", nargs="+", choices=["none", "rho"], help="Options, run in order: none | rho")
@@ -89,6 +90,8 @@ def cli_overrides(args):
         overrides["WIND_STRENGTH"] = args.wind_strength
     if args.wind_gust_strength is not None:
         overrides["WIND_GUST_STRENGTH"] = args.wind_gust_strength
+    if args.eval_gif is not None:
+        overrides["EVAL_GIF"] = args.eval_gif
     if args.mode is not None:
         overrides["REWARD_MODE"] = args.mode
     if args.seeds is not None:
@@ -107,7 +110,7 @@ def run_all(args, path="experiment.yaml"):
         mode = entry
         assert mode in ["none", "rho"], f"modes are 'none' or 'rho', got {mode}"
         cfg = Config(**{**e["config"], **overwrites, "SEED": base.SEED + s, "REWARD_MODE": mode, "RUN_ID": run_id,
-                        "EVAL_GIF": base.EVAL_GIF and base.SEED + s == e["config"].get("SEED", 1)})   # GIFs: first seed
+                        "EVAL_GIF": base.EVAL_GIF and s == 0})   # eval GIFs: first seed of this call
 
         spec, spec_desc = build_spec(cfg)
         reward_fn = None

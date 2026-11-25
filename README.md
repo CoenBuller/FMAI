@@ -144,6 +144,7 @@ flocking runs.
 | `--seeds N` | `N_SEEDS` | Seeds `SEED … SEED+N−1` per option (default 1) |
 | `--seed N` | `SEED` | First seed |
 | `--run-id ID` | `RUN_ID` | Output folder name (default: timestamp). Parallel runs share one id |
+| `--eval_gif true/false` | `EVAL_GIF` | A 5-env GIF at every evaluation, for the first seed of the call (`cluster.sbatch`: first seed only) |
 | `--compare-only` | – | No training: builds `compare.png` / `compare.csv` from the JSONs in `traces/<run-id>` |
 | `--smooth K` | `SMOOTH` | Moving-average window (in eval points) for the compare plots; `1` = off |
 | `--n_agents N` | `NUM_AGENTS` | Number of agents |

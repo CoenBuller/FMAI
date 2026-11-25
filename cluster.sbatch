@@ -58,7 +58,8 @@ for exp in $EXPERIMENTS; do
     for mode in $MODES; do
         for seed in $SEEDS; do
             while [ "$(jobs -rp | wc -l)" -ge "$MAX_PARALLEL" ]; do wait -n || failed=$((failed + 1)); done
-            $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --run-id "$rid" --train true $EXTRA \
+            gif=$([ "$seed" = "${SEEDS%% *}" ] && echo true || echo false)    # eval GIFs for the first seed only
+            $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --eval_gif "$gif" --run-id "$rid" --train true $EXTRA \
                 > "$LOGS/${rid}_${mode/:/_}_seed${seed}.log" 2>&1 &
             n=$((n + 1)); echo "Started run $n: $rid $mode seed $seed"
         done
