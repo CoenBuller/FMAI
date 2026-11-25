@@ -1,0 +1,61 @@
+modes:
+  - "none"
+  - "rho"
+
+config:
+  RESULTS_DIR: "results/flocking"
+  SPLIT_RESULTS: true                 # results/flocking/<native|robustness>/{agents,gifs,traces}/<run_id>
+  SCENARIO: "flocking"
+  DEVICE: "cuda"
+  SEED: 1
+
+  # Training & Evaluation
+  NUM_ENVS: 100
+  NUM_AGENTS: 4
+  MAX_STEPS: 200
+  EPISODES: 10000                     # x MAX_STEPS 200 = 2M env steps (100 PPO iterations, 21 evaluations)
+  EVAL_INTERVAL: 5
+  EVAL_EPISODES: 100
+  EVAL_GIF: true
+
+  # Flocking Geometry & SFO Thresholds
+  OBSERVE_PEERS: true
+  AGENT_DISTANCE: 0.20
+  TARGET_RADIUS: 0.30
+  EPSILON_T: 0.055
+  SPAWN_IN_BAND: true
+  LIDAR_MAX_RANGE: 0.35
+  MIN_PROXIMITY: 0.50
+
+  # Velocity & Target Random Walk
+  TARGET_SPEED_ACTION: 0.22
+  TARGET_TURN_RATE: 0.10
+  TARGET_BOUNDARY_MARGIN: 0.70
+  TARGET_REL_SPEED: 0.20
+  EPSILON_V: 0.05
+  V_MAX: 0.55
+
+  # Temporal Recovery & Wind
+  TAU_FLOCK: 0
+  WIND_STRENGTH: 0.15
+  WIND_GUST_STRENGTH: 0.15
+  RANDOM_WIND_DIRECTION: true
+
+  # Native Reward Weights
+  W_DIST: 1.0
+  W_PROX: 1.0
+  W_V_REL: 1.0
+  W_V_MAX: 1.0
+
+  # PPO / Network Hyperparameters
+  SHARED_REW: false
+  DEPTH: 2
+  N_NODES: 256
+  ACTIVATION: "Tanh"
+  LR: 0.0003
+  GAMMA: 0.99
+  LAMBDA: 0.9
+  CLIP_EPS: 0.2
+  ENTROPY_COEF: 0.0001
+  EPOCHS: 10
+  MINIBATCH: 512
