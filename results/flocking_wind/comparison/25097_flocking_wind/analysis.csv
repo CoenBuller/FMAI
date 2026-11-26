@@ -1,3 +1,0 @@
-option,seeds,episodes,phi_c (collision)_mean,phi_vm (v_max)_mean,phi_sd (dist_band)_mean,phi_sv (tan_speed)_mean,total_mean,phi_c (collision)_agent_avg_mean,phi_vm (v_max)_agent_avg_mean,phi_sd (dist_band)_agent_avg_mean,phi_sv (tan_speed)_agent_avg_mean,total_agent_avg_mean,frac_steps_rho>=0,frac_episodes_rho>=0_all_steps
-native,5,100,0.905,0.4931,0.7447,0.6695,0.4615,0.9499,0.616,0.8606,0.8184,0.5899,0.9887,0.0
-rho_robustness,5,100,0.9121,0.5035,0.6843,0.662,0.4638,0.9539,0.6254,0.8294,0.8232,0.5936,0.9892,0.0
