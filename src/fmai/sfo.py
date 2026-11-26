@@ -180,7 +180,7 @@ class GatedSpec:
         agent = self._pw(d.amin(dim=-1), self.d_crit, self.d_safe, self.d_far)            # Dist: -1 at contact
         if self.barrier:                                                                    # and Bar: closing speed
             cbf = ((d - self.d_safe) - (1 - self.gamma) * (d_prev - self.d_safe)) / (2 * self.v_max)   # / head-on speed
-            agent = torch.minimum(agent, cbf.nan_to_num(posinf=1.0).amin(dim=-1).clamp(-1.0, 1.0))
+            agent = torch.minimum(agent, cbf.nan_to_num(nan=1.0, posinf=1.0).amin(dim=-1).clamp(-1.0, 1.0))
 
         if zones is None:
             zone = torch.ones_like(dg)
