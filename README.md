@@ -12,8 +12,9 @@ Every option is evaluated on the same spec-independent robustness, so the result
 
 ## The current experiment (LIACS cluster)
 
-One job runs **`IPPO_zones.yaml`** (danger zones + inertia, see below) × **`rho`** (robustness reward) × **seeds 1–3** on one L40S on `ceratanium`,
-at most `MAX_PARALLEL` runs at a time.
+One job (`cluster.sbatch`) trains navigation with danger zones + inertia, seeds 1–5, under one run id `<job>_IPPO_zones`:
+native and the barrier spec (`IPPO_zones_barrier.yaml`, `BARRIER: true`) and the distance-only spec
+(`IPPO_zones_distance.yaml`, `BARRIER: false`), at most `MAX_PARALLEL` runs at a time.
 At the end it builds `compare.png`/`.csv`, the robustness analysis (`analysis.png`/`.csv`), the zero-shot scaling test (`scaling.png`/`.csv`) and the summary (see below).
 
 ```bash
@@ -36,7 +37,7 @@ scp.exe -r "l40s:/data/s3774740/fmai-results/navigation" results/            # e
 ssh.exe l40s 'scancel <jobid>'                                         # stop the job
 ```
 
-### Danger zones + inertia (`IPPO_zones.yaml`)
+### Danger zones + inertia (`IPPO_zones_barrier.yaml`)
 
 An augmented Navigation (`src/environment/navigation.py`):
 - **Danger zones:** `N_ZONES: 2` circles (`ZONE_RADIUS: 0.25`) per episode, on the straight path of random agents, never on a spawn or goal. Agents can drive through them. They see zones through a second 12-ray LiDAR (`ZONE_LIDAR_RANGE: 0.6`, appended to the observation; inside a zone every ray reads 0).
@@ -63,9 +64,9 @@ Run all commands from this folder with `PYTHONPATH=src`. The zones yamls use `DE
 ```bash
 export PYTHONPATH=src
 # 1. Train: native and robustness reward x 3 seeds, all under one run id
-uv run python -m experiments.experiment --exp IPPO_zones.yaml --modes none rho --seeds 3 --run-id ippo --train true
+uv run python -m experiments.experiment --exp IPPO_zones_barrier.yaml --modes none rho --seeds 3 --run-id ippo --train true
 # 2. Compare figure + table (learning curves of both options)
-uv run python -m experiments.experiment --exp IPPO_zones.yaml --run-id ippo --compare-only --smooth 5
+uv run python -m experiments.experiment --exp IPPO_zones_barrier.yaml --run-id ippo --compare-only --smooth 5
 # 3. Robustness analysis of the final checkpoints (spec terms over time)
 uv run python -m experiments.analyze --results results/navigation --run-id ippo
 # 4. Zero-shot scaling: the same policies on 2, 4, 6 and 8 agents, without retraining
@@ -160,6 +161,7 @@ flocking runs.
 - `N_ZONES`, `ZONE_RADIUS`, `ZONE_LIDAR_RANGE`, `CAT_PROB`, `CAT_PENALTY`, `AGENT_MASS`, `DRAG`: danger zones and inertia (see above).
 - `RESULTS_DIR`, `SPLIT_RESULTS`: where the results go (see [Output](#output)).
 - `RHO_SCALE`: the gated reward is `RHO_SCALE`·ρ.
+- `BARRIER`: GatedSpec's agent term. `true` = barrier (scores how fast gaps close), `false` = plain distance (−1 at contact, 0 at `SAFETY_DIST`).
 - `SHARED_REW`: `False` (the zones yaml): every agent gets its own reward and ρ; `True`: all agents get the team reward.
 - `EVAL_INTERVAL` (every N iterations), `EVAL_EPISODES`, `EVAL_GIF` (a GIF at every eval; slow, and the final GIF is always saved anyway).
 - `ENTROPY_COEF`, `LR`, `EPOCHS`, `MINIBATCH` (must be ≤ `NUM_ENVS × MAX_STEPS`, or no update runs), `ACTIVATION` (`Tanh`, `ReLU`, `Sigmoid`), …
@@ -219,7 +221,7 @@ Both reward options of a run in one figure and one table:
 | Variable | Meaning |
 |---|---|
 | `RESULTS` | `RESULTS_DIR` of the yamls (`results/navigation`) |
-| `EXPERIMENTS` | Yamls to run (`"IPPO_zones.yaml"`) |
+| `EXPERIMENTS` | Yamls to run (`"IPPO_zones_barrier.yaml"`) |
 | `MODES` | Options, e.g. `"none rho"` |
 | `SEEDS` | e.g. `"1 2 3"` |
 | `SMOOTH` | Moving average of the compare plots |
@@ -239,7 +241,7 @@ results/<navigation|flocking>/
 │   ├── gifs/<run_id>/           #   a rollout GIF per run, saved after training
 │   ├── traces/<run_id>/         #   config + eval history (.json) and diagnostics (.png) per run
 │   └── error/<run_id>.txt       #   skipped updates, if any
-├── robustness/                  # REWARD_MODE rho: the same folders (<scenario>_rho_seed<N>.*)
+├── <SPEC>/                      # REWARD_MODE rho, one folder per spec (robustness, barrier, distance): the same folders
 ├── stresstest/seed_<N>/         # flocking only: one JSON per stress-test setting
 └── comparison/
     ├── <run_id>/                # both options of one run: compare (+ navigation: analysis, scaling, summary;

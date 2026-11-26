@@ -25,7 +25,7 @@ from fmai.agents import Agent
 from fmai.sfo import GatedSpec, build_spec
 from fmai.utils import option_label, option_color, OPTION_ORDER, find_traces, agents_dir, comparison_dir, with_episode_ids
 
-NAMES = {"prog": r"$\rho_{Prog}$: goal progress", "agent": r"$\rho_{Agent}$: agent spacing",
+NAMES = {"prog": r"$\rho_{Prog}$: goal progress", "agent": r"$\rho_{Agent}$: agent spacing (distance and barrier)",
          "zone": r"$\rho_{Zone}$: danger zones", "total": r"$\rho$: total robustness",
          "in_zone": "fraction of agents inside a zone"}             # flocking: the names of its sub-formulas
 
@@ -49,7 +49,8 @@ def rollout_terms(cfg_dict, ckpt, episodes, seed, device):
         terms["total"] = spec(obs)
     else:
         zones = inf["zones"][..., 0, :, :] if cfg.N_ZONES else None
-        terms = GatedSpec.from_config(cfg).terms(inf["pos"], inf["goal"], td["agents", "info", "pos"], zones)
+        yardstick = dataclasses.replace(cfg, BARRIER=True)              # every option scored by the same full spec
+        terms = GatedSpec.from_config(yardstick).terms(inf["pos"], inf["goal"], td["agents", "info", "pos"], zones)
     out = {k: v.amin(dim=-1).cpu().numpy() for k, v in terms.items()}   # worst agent -> [E, T]
     out.update({k + "_avg": v.mean(dim=-1).cpu().numpy() for k, v in terms.items()})   # agent average -> [E, T]
     if cfg.SCENARIO == "flocking":

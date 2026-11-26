@@ -129,19 +129,23 @@ class GatedSpec:
     Specifically made for navigation environment.
     (1 = best achievable, 0 = about to violate, -1 = worst violation). Every term scores the state the action leads to:
          Prog_i  = h(d_i(before) - d_i(after)),  h: -1 at -v_max, 0 at v_min, 1 at v_max;  1 if within eps_g of the goal
-         Agent_i = min_j [h_ij(t+1) - (1-gamma) h_ij(t)] / (gamma (d_far - d_safe)),  h_ij = d_ij - d_safe
+         Agent_i = min(Dist_i, Bar_i)   (barrier=False: Dist_i only)
+           Dist_i = f(min_j d_ij),  f: -1 at d_crit (contact), 0 at d_safe, 1 at >= d_far
+           Bar_i  = min_j [h_ij(t+1) - (1-gamma) h_ij(t)] / (2 v_max),  h_ij = d_ij - d_safe
                    (barrier: >= 0 when every gap shrinks by at most a fraction gamma per step, so d_ij never drops
-                   below d_safe; gamma = drag / (1 - drag): the closing speed from which an agent can still coast to a stop)
+                   below d_safe; gamma = drag / (1 - drag): the closing speed from which an agent can still coast to a stop;
+                   -1 = both agents at full speed towards each other at d_safe)
          Zone_i  = g(min_k |p_i - z_k| - r),      g: -1 at zone_depth inside the edge, 0 at m_z outside it, 1 at >= zone_far
          rho_i   = Prog_i                         if Prog_i, Agent_i, Zone_i >= 0   (safe: go fast)
                    min(Prog_i, Agent_i, Zone_i)   otherwise                         (worst violation is the signal)
     Anticipation is left to the critic (GAE)."""
 
     def __init__(self, v_max=0.039, v_min=0.01, eps_g=0.1, d_safe=0.30, d_far=0.6, gamma=0.11,
-                 zone_radius=0.25, m_z=0.0, zone_depth=0.1, zone_far=0.6):
+                 barrier=True, d_crit=0.20, zone_radius=0.25, m_z=0.0, zone_depth=0.1, zone_far=0.6):
         # v_min > 0 makes standing still negative; d_far, m_z, zone_depth: design choices
         self.v_max, self.v_min, self.eps_g = v_max, v_min, eps_g
         self.d_safe, self.d_far, self.gamma = d_safe, d_far, gamma
+        self.barrier, self.d_crit = barrier, d_crit
         self.zone_r, self.m_z, self.zone_depth, self.zone_far = zone_radius, m_z, zone_depth, zone_far
 
     @classmethod
@@ -154,7 +158,7 @@ class GatedSpec:
         n, drag = substeps, cfg.DRAG
         v_max = u_range * dt ** 2 / (cfg.AGENT_MASS * drag) * (1 - drag * (n - 1) / (2 * n))
         return cls(v_max=v_max, eps_g=cfg.GOAL_EPS, d_safe=cfg.SAFETY_DIST, gamma=drag / (1 - drag),
-                   zone_radius=cfg.ZONE_RADIUS, zone_far=cfg.ZONE_LIDAR_RANGE)
+                   barrier=cfg.BARRIER, zone_radius=cfg.ZONE_RADIUS, zone_far=cfg.ZONE_LIDAR_RANGE)
 
     @staticmethod
     def _pw(x, neg, zero, pos):
@@ -171,9 +175,12 @@ class GatedSpec:
         prog = torch.where(dg <= self.eps_g, torch.ones_like(dg), self._pw(step, -self.v_max, self.v_min, self.v_max))
 
         A = pos.shape[2]
-        h, h_prev = torch.cdist(pos, pos) - self.d_safe, torch.cdist(pos_prev, pos_prev) - self.d_safe   # gap per pair
-        cbf = (h - (1 - self.gamma) * h_prev) / (self.gamma * (self.d_far - self.d_safe))   # [E, T, A, A]
-        agent = (cbf + torch.diag(torch.full((A,), float("inf"), device=pos.device))).amin(dim=-1).clamp(-1.0, 1.0)
+        eye = torch.diag(torch.full((A,), float("inf"), device=pos.device))                # ignore j = i
+        d, d_prev = torch.cdist(pos, pos) + eye, torch.cdist(pos_prev, pos_prev) + eye      # [E, T, A, A]
+        agent = self._pw(d.amin(dim=-1), self.d_crit, self.d_safe, self.d_far)            # Dist: -1 at contact
+        if self.barrier:                                                                    # and Bar: closing speed
+            cbf = ((d - self.d_safe) - (1 - self.gamma) * (d_prev - self.d_safe)) / (2 * self.v_max)   # / head-on speed
+            agent = torch.minimum(agent, cbf.nan_to_num(posinf=1.0).amin(dim=-1).clamp(-1.0, 1.0))
 
         if zones is None:
             zone = torch.ones_like(dg)
@@ -194,8 +201,10 @@ class GatedSpec:
     def desc(self):
         return [
             r"$\rho_{Prog_i}(t) = h(d_i(t) - d_i(t+1))$, $h$: $-1@-v_{max},\ 0@v_{min},\ 1@v_{max}$ (1 at goal)",
-            r"$\rho_{Agent_i}(t) = \min_{j \neq i} \frac{h_{ij}(t+1) - (1-\gamma)\,h_{ij}(t)}{\gamma\,(d_{far} - d_{safe})}$, "
-            r"$h_{ij} = d_{ij} - d_{safe}$",
+            r"$\rho_{Dist_i}(t) = f(\min_{j \neq i} d_{ij}(t+1))$, $f$: $-1@d_{crit},\ 0@d_{safe},\ 1@d_{far}$",
+            (r"$\rho_{Agent_i} = \min(\rho_{Dist_i}, \rho_{Bar_i})$, $\rho_{Bar_i}(t) = \min_{j \neq i} "
+             r"\frac{h_{ij}(t+1) - (1-\gamma)\,h_{ij}(t)}{2\,v_{max}}$, $h_{ij} = d_{ij} - d_{safe}$") if self.barrier else
+            r"$\rho_{Agent_i} = \rho_{Dist_i}$",
             r"$\rho_{Zone_i}(t) = g(\min_k \lVert p_i(t+1) - z_k \rVert - r)$, $g$: $-1@-\delta_z,\ 0@m_z,\ 1@z_{far}$",
             r"$\rho_i = \rho_{Prog_i}$ if $\min(\cdot) \geq 0$, else $\min(\rho_{Prog_i}, \rho_{Agent_i}, \rho_{Zone_i})$",
             rf"$v_{{max}} = {self.v_max:.4f},\ v_{{min}} = {self.v_min},\ \gamma = {self.gamma:.3f},\ "

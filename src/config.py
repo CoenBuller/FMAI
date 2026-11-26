@@ -20,7 +20,8 @@ class Config:
     RUN_ID: str = ""
     EVAL_GIF: bool = False
     RHO_SCALE: float = 1.0                                  # GatedSpec: the reward is RHO_SCALE * rho
-    SPEC: str = "robustness"                                # Spec name in the run labels (rho_robustness); navigation uses GatedSpec
+    BARRIER: bool = True                                    # GatedSpec agent term: min(distance, barrier) or distance only
+    SPEC: str = "robustness"                                # Spec name: robustness folder (SPLIT_RESULTS) and run label rho_<SPEC>
     N_SEEDS: int = 1                                        # Seeds SEED .. SEED + N_SEEDS - 1 are run per option (experiment.py)
     SMOOTH: int = 1                                         # Moving-average window (in eval points) for the compare plots; 1 = off
 

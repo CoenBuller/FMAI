@@ -67,14 +67,16 @@ def create_paths(base_dir, run_id, stem):
     return paths
 
 # Results layout. Flat (default):        <RESULTS_DIR>/{agents,gifs,traces,error}/<run_id>/
-# SPLIT_RESULTS (one folder per option): <RESULTS_DIR>/<native|robustness>/{agents,gifs,traces,error}/<run_id>/
+# SPLIT_RESULTS (one folder per option): <RESULTS_DIR>/<native|SPEC>/{agents,gifs,traces,error}/<run_id>/
 #                                        <RESULTS_DIR>/comparison/<run_id>/  (compare, analysis, scaling, summary)
-OPTION_DIRS = {"none": "native", "rho": "robustness"}
+def option_dir(cfg):
+    """'native' for the native reward, else the spec name (SPEC: robustness, barrier, distance)."""
+    return "native" if cfg.REWARD_MODE == "none" else (getattr(cfg, "SPEC", None) or "robustness")
 
 def run_root(cfg):
     """Folder that holds agents/, gifs/, traces/ and error/ of a run."""
     root = Path(cfg.RESULTS_DIR)
-    return root / OPTION_DIRS[cfg.REWARD_MODE] if getattr(cfg, "SPLIT_RESULTS", False) else root
+    return root / option_dir(cfg) if getattr(cfg, "SPLIT_RESULTS", False) else root
 
 def find_traces(results_dir, run_id):
     """The traces/<run_id> folders of a run: one per option folder (split layout) or the single flat one."""
@@ -278,7 +280,7 @@ def save_plots(history, path):
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#8a5cd1", "#17becf", "#8c564b",
           "#7a7a7a"]
-OPTION_ORDER = ["native", "rho_robustness"]
+OPTION_ORDER = ["native", "rho_robustness", "rho_barrier", "rho_distance"]
 
 def option_color(label):
     """Same colour for an option in every figure, however many options a run has."""

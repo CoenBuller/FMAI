@@ -11,8 +11,9 @@
 set -euo pipefail
 
 # ------------------------------- what to run (edit here) -------------------------------
-EXPERIMENTS="IPPO_zones.yaml flocking_wind.yaml"      # files in src/experiments/
-MODES="none rho"                                       # none (native reward) | rho (robustness reward)
+EXPERIMENTS="IPPO_zones_barrier.yaml IPPO_zones_distance.yaml"   # files in src/experiments/
+MODES=""                                               # none (native) | rho (robustness); "" = each yaml's modes:
+RUN_NAME="IPPO_zones"                                  # one run id <job>_<RUN_NAME> for all experiments ("" = per yaml)
 SEEDS="1 2 3 4 5"
 SMOOTH=5                                               # moving-average window (eval points) in the compare plots
 EXTRA=""                                               # flags for every run, e.g. "--seeds 2"
@@ -54,22 +55,26 @@ nvidia-smi
 PY=".venv/bin/python -m experiments.experiment"     # --train true: without it experiment.py runs the stress test
 n=0; failed=0
 for exp in $EXPERIMENTS; do
-    rid="${SLURM_JOB_ID}_${exp%.yaml}"
-    for mode in $MODES; do
+    rid="${SLURM_JOB_ID}_${RUN_NAME:-${exp%.yaml}}"
+    modes=${MODES:-$(.venv/bin/python -c "import yaml,sys; print(*yaml.safe_load(open(sys.argv[1]))['modes'])" "src/experiments/$exp")}
+    for mode in $modes; do
         for seed in $SEEDS; do
             while [ "$(jobs -rp | wc -l)" -ge "$MAX_PARALLEL" ]; do wait -n || failed=$((failed + 1)); done
             gif=$([ "$seed" = "${SEEDS%% *}" ] && echo true || echo false)    # eval GIFs for the first seed only
             $PY --exp "$exp" --modes "$mode" --seed "$seed" --seeds 1 --eval_gif "$gif" --run-id "$rid" --train true $EXTRA \
-                > "$LOGS/${rid}_${mode/:/_}_seed${seed}.log" 2>&1 &
-            n=$((n + 1)); echo "Started run $n: $rid $mode seed $seed"
+                > "$LOGS/${exp%.yaml}_${mode}_seed${seed}.log" 2>&1 &
+            n=$((n + 1)); echo "Started run $n: $exp $mode seed $seed -> $rid"
         done
     done
 done
 while [ -n "$(jobs -rp)" ]; do wait -n || failed=$((failed + 1)); done
 echo "$failed of $n runs failed (see $LOGS)"
 
+done_rids=""
 for exp in $EXPERIMENTS; do
-    rid="${SLURM_JOB_ID}_${exp%.yaml}"
+    rid="${SLURM_JOB_ID}_${RUN_NAME:-${exp%.yaml}}"
+    case " $done_rids " in *" $rid "*) continue ;; esac   # a shared run id is analysed once, over all its options
+    done_rids="$done_rids $rid"
     RESULTS=$(grep -m1 RESULTS_DIR "src/experiments/$exp" | cut -d'"' -f2)    # results/navigation, results/flocking
     $PY --exp "$exp" --run-id "$rid" --compare-only --smooth "$SMOOTH" $EXTRA || echo "compare failed for $exp"
     .venv/bin/python -m experiments.analyze --results "$RESULTS" --run-id "$rid" --episodes "$ANALYSIS_EPISODES" || echo "analysis failed for $exp"
@@ -78,4 +83,4 @@ for exp in $EXPERIMENTS; do
     # learning curves, final eval, steps to goal and spec rho per step of both options in one figure + table
     .venv/bin/python -m experiments.summary --smooth "$SMOOTH" --results "$RESULTS" --run-id "$rid" || echo "summary failed for $exp"
 done
-echo "Results in $OUT/{navigation,flocking}/: <native|robustness>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"
+echo "Results in $OUT/{navigation,flocking}/: <native|SPEC>/{agents,gifs,traces}/${SLURM_JOB_ID}_*, comparison/"
