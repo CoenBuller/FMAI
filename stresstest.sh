@@ -9,7 +9,7 @@ N_AGENTS="3 4 5 6"
 WIND_TRAINED="True False"
 WIND_STRENGTH="0.17 0.19 0.22 0.25"
 WIND_GUSTS="0.17 0.19 0.22 0.25"
-TAU_FLOCKING="1 2 3 4"
+TAU_FLOCKING="0 1 2 3 4"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -44,6 +44,9 @@ run_one() {
         --tau_flock "$tau_flocking" \
         --wind_gust_strength "$wind_gusts" 2>&1 | tee "$log"
 }
+
+TOTAL=$(( ${#SEEDS[@]} * ${#MODES[@]} * ${#N_AGENTS[@]} * ${#WIND_TRAINED[@]} * ${#WIND_STRENGTH[@]} * ${#WIND_GUSTS[@]} * ${#TAU_FLOCKING[@]} ))
+echo "Total test runs to execute: $TOTAL"
 
 for mode in $MODES; do
     for n in $N_AGENTS; do
