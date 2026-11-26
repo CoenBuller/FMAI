@@ -27,9 +27,9 @@ run_one() {
     local wind_trained="$4"
     local wind_strength="$5"
     local wind_gusts="$6"
-    local tau_flocking="$8"
+    local tau_flocking="$7"
 
-    local name="${mode}_trained_${wind_trained}_n_${n_agents}_w_${wind_strength}_g_${wind_gusts}_seed_${seed}"
+    local name="${mode}_trained_${wind_trained}_tau_${tau_flocking}_n_${n_agents}_w_${wind_strength}_g_${wind_gusts}_seed_${seed}"
     local log="local_logs/${name}.log"
 
     echo "[$(date +%H:%M:%S)] START $name -> $log"

@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--mode", type=str, default=None)
     parser.add_argument("--wind_trained", type=str_to_bool, default=True)
     parser.add_argument("--eval_gif", type=str_to_bool, default=None, help="GIF at every evaluation (EVAL_GIF)")
-    parser.add_argument("--tau_flock", type=str_to_bool, default=None)
+    parser.add_argument("--tau_flock", type=int, default=None)
     # Several options and seeds per call; for parallel runs (cluster.sbatch) one process per option/seed, all sharing
     # --run-id, then --compare-only
     parser.add_argument("--modes", nargs="+", choices=["none", "rho"], help="Options, run in order: none | rho")
@@ -100,7 +100,7 @@ def cli_overrides(args):
     if args.smooth is not None:
         overrides["SMOOTH"] = args.smooth
     if args.tau_flock is not None:
-        overrides["TAU_FLOCK"] = tau_flock
+        overrides["TAU_FLOCK"] = args.tau_flock
     return overrides
 
 def run_all(args, path="experiment.yaml"):
