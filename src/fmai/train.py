@@ -107,7 +107,7 @@ def train(env, eval_env, agent, spec, spec_desc: list[str], cfg: Config, reward_
     modes = {"rho": "robustness", "none": "native reward"}
     mode = cfg.REWARD_MODE
     assert mode in modes, f"Possible modes are 'rho' or 'none'. You gave {mode}"
-    print(f"\n======= mode: {modes[mode]} =======")
+    print(f"\n======= Mode: {modes[mode]} | Device: {cfg.DEVICE} =======")
     stem = f"{cfg.SCENARIO}_{mode}_seed{cfg.SEED}"
     paths = create_paths(run_root(cfg), cfg.RUN_ID, stem)                   # see utils.run_root for the layout
 

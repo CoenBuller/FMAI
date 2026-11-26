@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--mode", type=str, default=None)
     parser.add_argument("--wind_trained", type=str_to_bool, default=True)
     parser.add_argument("--eval_gif", type=str_to_bool, default=None, help="GIF at every evaluation (EVAL_GIF)")
+    parser.add_argument("--tau_flock", type=int, default=None)
     # Several options and seeds per call; for parallel runs (cluster.sbatch) one process per option/seed, all sharing
     # --run-id, then --compare-only
     parser.add_argument("--modes", nargs="+", choices=["none", "rho"], help="Options, run in order: none | rho")
@@ -98,6 +99,8 @@ def cli_overrides(args):
         overrides["N_SEEDS"] = args.seeds
     if args.smooth is not None:
         overrides["SMOOTH"] = args.smooth
+    if args.tau_flock is not None:
+        overrides["TAU_FLOCK"] = args.tau_flock
     return overrides
 
 def run_all(args, path="experiment.yaml"):
@@ -225,12 +228,12 @@ if __name__ == "__main__":
   else:
     info, cfg, spec_desc = stresstest(seed=args.seed, mode=args.mode, wind=args.wind_trained, path=path, args=args)
 
-    out_dir = os.path.join(cfg.RESULTS_DIR, "stresstest", f"seed_{cfg.SEED}" )
+    out_dir = os.path.join(cfg.RESULTS_DIR, "stresstest", f"seed_{cfg.SEED}")
     os.makedirs(out_dir, exist_ok=True)
     train_tag = "windtrained" if args.wind_trained else "nowindtrained"
     out_file = os.path.join(
         out_dir,
-        f"{cfg.REWARD_MODE}_{train_tag}_n{cfg.NUM_AGENTS}_wind_{cfg.WIND_STRENGTH}_gust_{cfg.WIND_GUST_STRENGTH}.json",
+        f"{cfg.REWARD_MODE}_{train_tag}_n{cfg.NUM_AGENTS}_tau_{cfg.TAU_FLOCK}_wind_{cfg.WIND_STRENGTH}_gust_{cfg.WIND_GUST_STRENGTH}.json",
         )
     
     with open(out_file, "w") as f:

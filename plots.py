@@ -39,10 +39,13 @@ def aggregate_reward_mode(results: str, run_id: str, reward_mode: str) -> dict:
             [[extractor_fn(entry) for entry in hist] for hist in seed_histories],
             dtype=float,
         )
-        return {
-            "mean": np.nanmean(arr, axis=0),
-            "std": np.nanstd(arr, axis=0),
-        }
+        mean = np.full(arr.shape[1], np.nan)
+        std = np.full(arr.shape[1], np.nan)
+        valid = ~np.all(np.isnan(arr), axis=0)
+        if np.any(valid):
+            mean[valid] = np.nanmean(arr[:, valid], axis=0)
+            std[valid] = np.nanstd(arr[:, valid], axis=0)
+        return {"mean": mean, "std": std}
 
     ref_hist = seed_histories[0]
     sub_rho_keys = list(ref_hist[0]["sub_rho"].keys())
@@ -218,8 +221,10 @@ def plot_flocking(results: str, run_id: str, save_path: str):
     ax[3].tick_params(axis="both", which="major", labelsize=marker_size)
     ax[3].grid(True, axis="y", alpha=0.4)
 
-    ax[2].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
-    ax[3].set_xticklabels(bar_labels, fontweight="bold")    # type: ignore
+    ax[2].set_xticks(range(len(bar_labels)))
+    ax[2].set_xticklabels(bar_labels, fontweight="bold")
+    ax[3].set_xticks(range(len(bar_labels)))
+    ax[3].set_xticklabels(bar_labels, fontweight="bold")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, bbox_inches="tight", dpi=200)
     plt.close(fig)

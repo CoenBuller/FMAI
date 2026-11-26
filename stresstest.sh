@@ -5,10 +5,11 @@
 
 SEEDS="30 31 32 33 34"
 MODES="rho none"
-N_AGENTS="4 5 6"
+N_AGENTS="3 4 5 6"
 WIND_TRAINED="True False"
 WIND_STRENGTH="0.17 0.19 0.22 0.25"
 WIND_GUSTS="0.17 0.19 0.22 0.25"
+TAU_FLOCKING="0 1 2 3 4"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -26,8 +27,9 @@ run_one() {
     local wind_trained="$4"
     local wind_strength="$5"
     local wind_gusts="$6"
+    local tau_flocking="$7"
 
-    local name="${mode}_trained_${wind_trained}_n_${n_agents}_w_${wind_strength}_g_${wind_gusts}_seed_${seed}"
+    local name="${mode}_trained_${wind_trained}_tau_${tau_flocking}_n_${n_agents}_w_${wind_strength}_g_${wind_gusts}_seed_${seed}"
     local log="local_logs/${name}.log"
 
     echo "[$(date +%H:%M:%S)] START $name -> $log"
@@ -39,8 +41,12 @@ run_one() {
         --seed "$seed" \
         --wind_trained "$wind_trained" \
         --wind_strength "$wind_strength" \
+        --tau_flock "$tau_flocking" \
         --wind_gust_strength "$wind_gusts" 2>&1 | tee "$log"
 }
+
+TOTAL=$(( ${#SEEDS[@]} * ${#MODES[@]} * ${#N_AGENTS[@]} * ${#WIND_TRAINED[@]} * ${#WIND_STRENGTH[@]} * ${#WIND_GUSTS[@]} * ${#TAU_FLOCKING[@]} ))
+echo "Total test runs to execute: $TOTAL"
 
 for mode in $MODES; do
     for n in $N_AGENTS; do
@@ -48,7 +54,9 @@ for mode in $MODES; do
             for trained in $WIND_TRAINED; do
                 for wind_strength in $WIND_STRENGTH; do
                     for wind_gust in $WIND_GUSTS; do
-                        run_one "$mode" "$n" "$seed" "$trained" "$wind_strength" "$wind_gust"
+                        for tau in $TAU_FLOCKING; do
+                            run_one "$mode" "$n" "$seed" "$trained" "$wind_strength" "$wind_gust" "$tau"
+                        done
                     done
                 done
             done
