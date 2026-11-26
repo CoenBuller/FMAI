@@ -6,8 +6,8 @@ from pathlib import Path
 
 def migrate(base_dir: str, dry_run: bool = True):
     base = Path(base_dir)
-    src_root = base / "flocking_wind"
-    dst_root = base / "flocking"
+    src_root = base / "MDP_flocking_wind"
+    dst_root = base / "MDP_flocking"
 
     if not src_root.exists():
         raise FileNotFoundError(f"Source directory not found: {src_root}")

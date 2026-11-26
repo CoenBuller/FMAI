@@ -228,7 +228,7 @@ if __name__ == "__main__":
   else:
     info, cfg, spec_desc = stresstest(seed=args.seed, mode=args.mode, wind=args.wind_trained, path=path, args=args)
 
-    out_dir = os.path.join(cfg.RESULTS_DIR, "stresstest", f"seed_{cfg.SEED}" )
+    out_dir = os.path.join(cfg.RESULTS_DIR, "stresstest", f"seed_{cfg.SEED}")
     os.makedirs(out_dir, exist_ok=True)
     train_tag = "windtrained" if args.wind_trained else "nowindtrained"
     out_file = os.path.join(
