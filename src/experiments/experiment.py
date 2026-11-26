@@ -233,7 +233,7 @@ if __name__ == "__main__":
     train_tag = "windtrained" if args.wind_trained else "nowindtrained"
     out_file = os.path.join(
         out_dir,
-        f"{cfg.REWARD_MODE}_{train_tag}_n{cfg.NUM_AGENTS}_wind_{cfg.WIND_STRENGTH}_gust_{cfg.WIND_GUST_STRENGTH}.json",
+        f"{cfg.REWARD_MODE}_{train_tag}_n{cfg.NUM_AGENTS}_tau_{cfg.TAU}_wind_{cfg.WIND_STRENGTH}_gust_{cfg.WIND_GUST_STRENGTH}.json",
         )
     
     with open(out_file, "w") as f:
