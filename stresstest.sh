@@ -7,9 +7,9 @@ SEEDS="30 31 32 33 34"
 MODES="rho none"
 N_AGENTS="3 4 5 6"
 WIND_TRAINED="True False"
-WIND_STRENGTH="0.17 0.19 0.22 0.25"
-WIND_GUSTS="0.17 0.19 0.22 0.25"
-TAU_FLOCKING="0 1 2 3 4"
+WIND_STRENGTH="0"
+WIND_GUSTS="0"
+TAU_FLOCKING="0 1"
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."

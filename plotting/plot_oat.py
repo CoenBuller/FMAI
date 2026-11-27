@@ -28,6 +28,14 @@ METRIC_LABELS = {
 }
 
 
+def get_active_styles(trained: str) -> dict:
+    if trained == "wind":
+        return {k: v for k, v in REGIME_STYLES.items() if k[1] is True}
+    if trained == "no_wind":
+        return {k: v for k, v in REGIME_STYLES.items() if k[1] is False}
+    return REGIME_STYLES
+
+
 def load_stresstest_results(root_dir: str) -> pd.DataFrame:
     pattern = os.path.join(root_dir, "seed_*", "*.json")
     files = sorted(glob.glob(pattern))
@@ -96,6 +104,7 @@ def plot_oat_metric(
     base_wind: float,
     base_gust: float,
     base_tau: int,
+    styles: dict = REGIME_STYLES,
 ):
     """1x3 OAT plot for a single scalar metric (pass_rate, return_mean, or rho_mean)."""
     slices = _oat_slices(df_tau, base_n, base_wind, base_gust)
@@ -103,7 +112,7 @@ def plot_oat_metric(
 
     for ax, (col, xlabel, subtitle, sliced) in zip(axes, slices):
         x_vals = sorted(sliced[col].unique())
-        for (mode, wt), style in REGIME_STYLES.items():
+        for (mode, wt), style in styles.items():
             sub = sliced[(sliced["mode"] == mode) & (sliced["wind_trained"] == wt)]
             stats = sub.groupby(col)[metric].agg(["mean", "std"]).reindex(x_vals)
             y, e = stats["mean"].values, stats["std"].values
@@ -146,8 +155,9 @@ def plot_oat_subformulas(
     base_wind: float,
     base_gust: float,
     base_tau: int,
+    styles: dict = REGIME_STYLES,
 ):
-    """3x4 grid comparing all sub-formula failure rates under OAT sweeps.
+    """3x3 grid comparing sub-formula failure rates (excluding v_max) under OAT sweeps.
     Rows = swept factor (N Agents, Wind Strength, Wind Gust), Cols = sub-formulas.
     """
     fail_cols = [
@@ -171,7 +181,7 @@ def plot_oat_subformulas(
         x_vals = sorted(sliced[col].unique())
         for c, fcol in enumerate(fail_cols):
             ax = axes[r, c]
-            for (mode, wt), style in REGIME_STYLES.items():
+            for (mode, wt), style in styles.items():
                 sub = sliced[(sliced["mode"] == mode) & (sliced["wind_trained"] == wt)]
                 stats = sub.groupby(col)[fcol].agg(["mean", "std"]).reindex(x_vals)
                 y, e = stats["mean"].values, stats["std"].values
@@ -208,7 +218,7 @@ def plot_oat_subformulas(
         handles, labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 1.04),
-        ncol=len(REGIME_STYLES),
+        ncol=len(styles),
         fontsize=11,
         frameon=True,
     )
@@ -230,9 +240,17 @@ if __name__ == "__main__":
     p.add_argument("--base-wind", type=float, default=0.17, help="Default wind strength")
     p.add_argument("--base-gust", type=float, default=0.17, help="Default wind gust strength")
     p.add_argument("--base-tau", type=int, default=1, help="Fixed tau_flock value")
+    p.add_argument(
+        "--trained",
+        choices=["both", "wind", "no_wind"],
+        default="both",
+        help="Which trained policies to plot (default: both)",
+    )
     a = p.parse_args()
 
-    out_dir = os.path.join(a.results, "comparison", "stresstest_oat")
+    styles = get_active_styles(a.trained)
+    suffix = "" if a.trained == "both" else f"_{a.trained}"
+    out_dir = os.path.join(a.results, "comparison", f"stresstest_oat{suffix}")
     os.makedirs(out_dir, exist_ok=True)
 
     raw_df = load_stresstest_results(os.path.join(a.results, "stresstest"))
@@ -249,6 +267,7 @@ if __name__ == "__main__":
             base_wind=a.base_wind,
             base_gust=a.base_gust,
             base_tau=a.base_tau,
+            styles=styles,
         )
 
     plot_oat_subformulas(
@@ -258,4 +277,5 @@ if __name__ == "__main__":
         base_wind=a.base_wind,
         base_gust=a.base_gust,
         base_tau=a.base_tau,
+        styles=styles,
     )
