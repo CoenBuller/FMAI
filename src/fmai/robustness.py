@@ -43,6 +43,7 @@ class WeightedRobustness:
         self.formulas = formulas
         self.weights = weights or [1 / len(formulas)] * len(formulas)
         self.clip = clip
+        
     @torch.no_grad()
     def __call__(self, obs):                             # obs: [E, T, A, D] -> rho: [E, T]
         rho = 0.0
