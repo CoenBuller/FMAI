@@ -95,7 +95,7 @@ def aggregate_reward_mode(results: str, run_id: str, reward_mode: str) -> dict:
 
 def plot_flocking(results: str, run_id: str, save_path: str):
     fig = plt.figure(figsize=(32, 8))
-    label_size = 17
+    label_size = 20
     marker_size = 17
     plt.rcParams["axes.titleweight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
