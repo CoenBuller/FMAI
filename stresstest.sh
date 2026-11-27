@@ -3,13 +3,13 @@
 # under other wind, gusts and numbers of agents. Output: results/flocking/stresstest/seed_<N>/*.json
 # Usage: bash stresstest.sh stresstest
 
-SEEDS="30 31 32 33 34"
-MODES="rho none"
-N_AGENTS="3 4 5 6"
-WIND_TRAINED="True False"
-WIND_STRENGTH="0"
-WIND_GUSTS="0"
-TAU_FLOCKING="0 1"
+SEEDS=(30 31 32 33 34)
+MODES=(rho none)
+N_AGENTS=(3 4 5 6)
+WIND_TRAINED=(False)
+WIND_STRENGTH=(0 0.17 0.19 0.22 0.25)
+WIND_GUSTS=(0.17 0.19 0.22 0.25)   # removed 0 so (0, 0) isn't run twice
+TAU_FLOCKING=(0 1)
 
 if [ -z "$1" ]; then
     echo "Error: No config file specified."
@@ -45,18 +45,19 @@ run_one() {
         --wind_gust_strength "$wind_gusts" 2>&1 | tee "$log"
 }
 
-TOTAL=$(( ${#SEEDS[@]} * ${#MODES[@]} * ${#N_AGENTS[@]} * ${#WIND_TRAINED[@]} * ${#WIND_STRENGTH[@]} * ${#WIND_GUSTS[@]} * ${#TAU_FLOCKING[@]} ))
+TOTAL=$(( ${#SEEDS[@]} * ${#MODES[@]} * ${#N_AGENTS[@]} * ${#WIND_TRAINED[@]} * ${#TAU_FLOCKING[@]} * (${#WIND_STRENGTH[@]} + ${#WIND_GUSTS[@]}) ))
 echo "Total test runs to execute: $TOTAL"
 
-for mode in $MODES; do
-    for n in $N_AGENTS; do
-        for seed in $SEEDS; do
-            for trained in $WIND_TRAINED; do
-                for wind_strength in $WIND_STRENGTH; do
-                    for wind_gust in $WIND_GUSTS; do
-                        for tau in $TAU_FLOCKING; do
-                            run_one "$mode" "$n" "$seed" "$trained" "$wind_strength" "$wind_gust" "$tau"
-                        done
+for mode in "${MODES[@]}"; do
+    for n in "${N_AGENTS[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+            for trained in "${WIND_TRAINED[@]}"; do
+                for tau in "${TAU_FLOCKING[@]}"; do
+                    for wind_strength in "${WIND_STRENGTH[@]}"; do
+                        run_one "$mode" "$n" "$seed" "$trained" "$wind_strength" 0 "$tau"
+                    done
+                    for wind_gust in "${WIND_GUSTS[@]}"; do
+                        run_one "$mode" "$n" "$seed" "$trained" 0 "$wind_gust" "$tau"
                     done
                 done
             done
