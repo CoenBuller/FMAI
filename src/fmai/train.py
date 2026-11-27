@@ -47,7 +47,7 @@ def evaluate(eval_env, agent: Agent, spec, cfg: Config, training_episode: int, g
     rho_agent = rho_per_agent(spec, rollout) if spec is not None else sfo_rho(rollout["next", "agents", "info"])   # [E, A]
     rho_env = rho_agent.amin(dim=-1)                                     # the spec must hold for every agent
     if gif is not None:
-        title = f"{'native' if cfg.REWARD_MODE == 'none' else 'robustness'} | step {training_episode * cfg.MAX_STEPS:,}"
+        title = f"{option_dir(cfg)} | step {training_episode * cfg.MAX_STEPS:,}"
         save_eval_gif(rollout, gif, title=title, **gif_style(cfg))
     pass_rate, _ = ms((rho_env >= 0).float())
     ret_mean, ret_std = ms(ret.mean(dim=1))
