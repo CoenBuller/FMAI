@@ -72,6 +72,55 @@ def load_stresstest_results(root_dir: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def print_config_summary(df_tau: pd.DataFrame, base_tau: int, styles: dict = REGIME_STYLES):
+    """Prints mean ± std across seeds for pass_rate, return_mean, and rho_mean at each config setting."""
+    active_keys = set(styles.keys())
+    df_filtered = df_tau[df_tau.apply(lambda r: (r["mode"], r["wind_trained"]) in active_keys, axis=1)].copy()
+    df_filtered["policy"] = df_filtered.apply(
+        lambda r: styles[(r["mode"], r["wind_trained"])]["label"], axis=1
+    )
+
+    group_cols = ["n_agents", "wind_strength", "wind_gust", "policy"]
+    agg = (
+        df_filtered.groupby(group_cols, sort=True)
+        .agg(
+            seeds=("seed", "count"),
+            pass_mean=("pass_rate", "mean"),
+            pass_std=("pass_rate", "std"),
+            ret_mean=("return_mean", "mean"),
+            ret_std=("return_mean", "std"),
+            rho_mean=("rho_mean", "mean"),
+            rho_std=("rho_mean", "std"),
+        )
+        .reset_index()
+    )
+
+    print(f"\n==================== Stress-Test Summary (τ = {base_tau}) ====================")
+    header = (
+        f"{'N':>3} | {'Wind':>5} | {'Gust':>5} | {'Policy':<16} | {'Seeds':>5} | "
+        f"{'Pass Rate':>15} | {'Native Return':>17} | {'Robustness (ρ)':>17}"
+    )
+    print(header)
+    print("-" * len(header))
+
+    prev_cfg = None
+    for _, row in agg.iterrows():
+        cur_cfg = (row["n_agents"], row["wind_strength"], row["wind_gust"])
+        if prev_cfg is not None and cur_cfg != prev_cfg:
+            print("-" * len(header))
+        prev_cfg = cur_cfg
+
+        pass_str = f"{row['pass_mean']:.3f} ± {row['pass_std']:.3f}"
+        ret_str = f"{row['ret_mean']:6.2f} ± {row['ret_std']:.2f}"
+        rho_str = f"{row['rho_mean']:6.3f} ± {row['rho_std']:.3f}"
+
+        print(
+            f"{int(row['n_agents']):>3} | {row['wind_strength']:>5.2f} | {row['wind_gust']:>5.2f} | "
+            f"{row['policy']:<16} | {int(row['seeds']):>5} | {pass_str:>15} | {ret_str:>17} | {rho_str:>17}"
+        )
+    print("=" * len(header) + "\n")
+
+
 def _oat_slices(df_tau: pd.DataFrame, base_n: int, base_wind: float, base_gust: float):
     """Returns the 3 OAT slices: (swept_col, xlabel, subtitle, sliced_df)."""
     return [
@@ -257,6 +306,8 @@ if __name__ == "__main__":
     df_tau = raw_df[raw_df["tau_flock"] == a.base_tau].copy()
     if df_tau.empty:
         raise ValueError(f"No stress-test results found with tau_flock == {a.base_tau}")
+
+    print_config_summary(df_tau, base_tau=a.base_tau, styles=styles)
 
     for metric in ["pass_rate", "return_mean", "rho_mean"]:
         plot_oat_metric(
